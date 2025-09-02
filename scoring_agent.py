@@ -1044,6 +1044,11 @@ class MultiCriteriaScoringAgent:
             'building_standards_loaded': len(self.building_standards),
             'cache_size': len(self.calculation_cache)
         }
+    # Add to the MultiCriteriaScoringAgent class
+    def check_performance_threshold(self, comprehensive_scores: List[ComprehensiveScore], threshold: float = 0.7) -> bool:
+        """Check if scores meet performance threshold (for flowchart's N: Performance Threshold?)."""
+        avg_final_score = np.mean([score.final_score for score in comprehensive_scores])
+        return avg_final_score >= threshold
 
 
 # Example usage and testing

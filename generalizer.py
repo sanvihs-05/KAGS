@@ -1762,7 +1762,18 @@ class GraphOfThoughtsGeneralizer:
                 'cross_connections': sum(len(n.cross_connections) for n in self.nodes.values()) // 2
             }
         }
-
+    # Add to the GraphOfThoughtsGeneralizer class
+    def decompose_strategy_space(self, requirements: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Decompose complex requirements into sub-strategies (for flowchart's E: Decompose Strategy Space)."""
+        # Example logic: Split based on spatial needs
+        sub_strategies = []
+        for need in requirements.get('spatial_needs', []):
+            sub_strategies.append({
+                'sub_strategy': f"{need['room_type']}_focused",
+                'priority': need.get('priority', 1.0)
+                })
+        return sub_strategies
+ 
 
 # Example usage for testing the Graph of Thoughts system
 if __name__ == "__main__":

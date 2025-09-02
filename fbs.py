@@ -2634,6 +2634,20 @@ class EnhancedDirectionalFBSInterface:
             ])
         
         return base_functions
+    # Add to the EnhancedDirectionalFBSInterface class (or FBSOntologyGenerator)
+    def map_fbs_to_layout(self, layout: List[Dict], prototype: Dict[str, Any]) -> FBSOntology:
+        """Generate FBS ontology for a specific layout (for flowchart's T: FBS Ontology per Layout)."""
+        # Similar to generate_prototype_specific_fbs_ontology, but layout-focused
+        ontology = self.generate_prototype_specific_fbs_ontology(prototype, {})
+        # Add layout-specific structures
+        for room in layout:
+            ontology.structures.append(Structure(
+                element_id=f"S_room_{room['room_id']}",
+                name=room['room_type'],
+                description=f"Positioned at ({room['x']}, {room['y']})",
+                geometric_properties={'width': room['width'], 'height': room['height']}
+                  ))
+        return ontology
 if __name__ == '__main__':
     print("🚀 Testing Gemma 3 connection...")
     

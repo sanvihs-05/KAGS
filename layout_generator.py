@@ -15,6 +15,8 @@ import matplotlib.patches as patches
 from matplotlib.patches import Rectangle, FancyBboxPatch, Circle, Polygon, Arrow, FancyArrowPatch
 import numpy as np
 from pathlib import Path
+import random
+
 
 # SVG generation imports
 import xml.etree.ElementTree as ET
@@ -460,6 +462,17 @@ class CompactRoomPlacer:
             return overlap_length >= required_overlap
         
         return False
+    # Add to the CompactRoomPlacer class (or as a standalone function)
+    @staticmethod
+    def generate_layout_variants(rooms: List[Dict], num_variants: int = 3) -> List[List[Dict]]:
+        """Generate multiple layout variants (for flowchart's S: Layout Generator)."""
+        variants = []
+        for _ in range(num_variants):
+            # Shuffle room order or apply random offsets for variation
+            shuffled_rooms = random.sample(rooms, len(rooms))
+            placed = CompactRoomPlacer.place_rooms_optimally(shuffled_rooms)
+            variants.append(placed)
+            return variants
 
 
 class DataProcessor:
