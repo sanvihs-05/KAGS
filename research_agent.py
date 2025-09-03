@@ -13,6 +13,7 @@ from sentence_transformers import SentenceTransformer
 import re
 from encoder import Gemma3Encoder 
 import uuid
+from datetime import datetime
 
 
 # Set up logging
@@ -57,6 +58,20 @@ class ResearchContext:
     relevance_score: float = 0.0
     confidence: float = 0.0
     research_depth: int = 0
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'prototype_id': self.prototype_id,
+            'research_query': self.research_query,
+            'context_type': self.context_type,
+            'priority': float(self.priority),
+            'similar_examples': [ex for ex in self.similar_examples],  # Assuming examples are dicts
+            'design_patterns': [dp for dp in self.design_patterns],    # Assuming patterns are dicts
+            'code_requirements': [cr for cr in self.code_requirements],  # Assuming requirements are dicts
+            'best_practices': [bp for bp in self.best_practices],      # Assuming practices are dicts
+            'relevance_score': float(self.relevance_score),
+            'confidence': float(self.confidence),
+            'research_depth': self.research_depth
+            }
 
 @dataclass
 class KnowledgeSource:
@@ -68,6 +83,16 @@ class KnowledgeSource:
     metadata: Dict[str, Any] = field(default_factory=dict)
     quality_score: float = 0.0
     relevance_context: Set[str] = field(default_factory=set)
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'source_id': self.source_id,
+            'source_type': self.source_type,
+            'content': self.content,  # Assuming content is already JSON-serializable (dict)
+            'embedding': self.embedding.tolist() if self.embedding is not None else None,  # Convert numpy array to list
+            'metadata': self.metadata,
+            'quality_score': float(self.quality_score),  # Ensure float
+            'relevance_context': list(self.relevance_context)  # Convert set to list
+            }
 
 class ResearchQueryType(Enum):
     """Types of research queries"""
@@ -130,6 +155,34 @@ class ResearchAgent:
         }
         self.gemma_encoder = Gemma3Encoder()
         logger.info("✅ Initialized Gemma 3 Encoder for research queries")
+    def _normalize_requirements(self, requirements: Dict[str, Any]) -> Dict[str, Any]:
+        """Normalize requirements and handle None values safely."""
+        try:
+            normalized = requirements.copy()
+            spatial_needs = normalized.get('spatial_needs', [])
+
+            for need in spatial_needs:
+                if need.get('min_area') is None:
+                    need['min_area'] = 100
+                if need.get('quantity') is None:
+                    need['quantity'] = 1
+
+                try:
+                    need['min_area'] = max(50, int(float(need['min_area'])))
+                except (ValueError, TypeError):
+                    need['min_area'] = 100
+
+                try:
+                    need['quantity'] = max(1, int(float(need['quantity'])))
+                except (ValueError, TypeError):
+                    need['quantity'] = 1
+
+            normalized['spatial_needs'] = spatial_needs
+            return normalized
+
+        except Exception as e:
+            logger.error(f"Basic requirements normalization failed: {e}")
+            return self._create_minimal_requirements()
     
     def _load_knowledge_base(self):
         """Load multi-modal RAG knowledge base properly"""
@@ -400,6 +453,7 @@ class ResearchAgent:
                          research_focus: List['ResearchQueryType'] = None) -> List['ResearchContext']:
         """Conduct comprehensive research for a prototype with enhanced error handling"""
         logger.info(f"Conducting research for prototype {prototype_id}")
+        requirements = self._normalize_requirements(requirements)
 
         try:
             # ADD: Comprehensive input validation
@@ -553,11 +607,27 @@ class ResearchAgent:
                         'priority': 'medium'
                     }
 
-                # Ensure all required fields exist
+                # Safe value extraction
+                min_area_raw = need_dict.get('min_area', 100)
+                quantity_raw = need_dict.get('quantity', 1)
+
+                min_area = min_area_raw if min_area_raw is not None else 100
+                quantity = quantity_raw if quantity_raw is not None else 1
+
+                try:
+                    min_area = max(50, int(float(min_area)))
+                except (ValueError, TypeError):
+                    min_area = 100
+
+                try:
+                    quantity = max(1, int(float(quantity)))
+                except (ValueError, TypeError):
+                    quantity = 1
+
                 normalized_need = {
                     'room_type': need_dict.get('room_type', 'unknown'),
-                    'quantity': max(1, need_dict.get('quantity', 1)),
-                    'min_area': max(50, need_dict.get('min_area', 100)),
+                    'quantity': quantity,
+                    'min_area': min_area,
                     'priority': need_dict.get('priority', 'medium')
                 }
                 normalized_spatial_needs.append(normalized_need)
@@ -569,9 +639,25 @@ class ResearchAgent:
             if hasattr(site_constraints, '__dict__'):
                 site_constraints = asdict(site_constraints)
 
+            plot_length_raw = site_constraints.get('plot_length', 50)
+            plot_width_raw = site_constraints.get('plot_width', 30)
+
+            plot_length = plot_length_raw if plot_length_raw is not None else 50
+            plot_width = plot_width_raw if plot_width_raw is not None else 30
+
+            try:
+                plot_length = max(20, float(plot_length))
+            except (ValueError, TypeError):
+                plot_length = 50
+
+            try:
+                plot_width = max(15, float(plot_width))
+            except (ValueError, TypeError):
+                plot_width = 30
+
             normalized['site_constraints'] = {
-                'plot_length': max(20, site_constraints.get('plot_length', 50)),
-                'plot_width': max(15, site_constraints.get('plot_width', 30)),
+                'plot_length': plot_length,
+                'plot_width': plot_width,
                 'orientation': site_constraints.get('orientation', 'south')
             }
 
@@ -585,10 +671,18 @@ class ResearchAgent:
                 'accessibility_requirements': design_prefs.get('accessibility_requirements', False)
             }
 
-            # Handle budget
-            normalized['budget'] = max(500000, requirements.get('budget', 2500000))
+            # Handle budget with None safety
+            budget_raw = requirements.get('budget', 2500000)
+            budget = budget_raw if budget_raw is not None else 2500000
 
-            # Copy other fields
+            try:
+                budget = max(500000, float(budget))
+            except (ValueError, TypeError):
+                budget = 2500000
+
+            normalized['budget'] = budget
+
+            # Copy other fields safely
             for key, value in requirements.items():
                 if key not in ['spatial_needs', 'site_constraints', 'design_preferences', 'budget']:
                     normalized[key] = value
@@ -1565,18 +1659,11 @@ class ResearchAgent:
                 'research_types': list(set(ctx.context_type for ctx in research_contexts))
             },
             
-            'research_contexts': [
-                {
-                    'prototype_id': ctx.prototype_id,
-                    'context_type': ctx.context_type,
-                    'relevance_score': ctx.relevance_score,
-                    'confidence': ctx.confidence,
-                    'similar_examples_count': len(ctx.similar_examples),
-                    'design_patterns_count': len(ctx.design_patterns),
-                    'research_query': ctx.research_query
-                }
-                for ctx in research_contexts
-            ],
+            'research_metadata': {
+                'timestamp': datetime.now().isoformat(),
+                'total_contexts': len(research_contexts),
+                'context_types': list(set(ctx.context_type for ctx in research_contexts)),
+                },
             
             'aggregated_findings': {
                 'spatial_insights': self._aggregate_spatial_insights(research_contexts),

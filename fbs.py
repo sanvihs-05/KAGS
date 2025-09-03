@@ -2635,6 +2635,205 @@ class EnhancedDirectionalFBSInterface:
         
         return base_functions
     # Add to the EnhancedDirectionalFBSInterface class (or FBSOntologyGenerator)
+    def _generate_prototype_specific_behaviors(self, prototype, requirements, environmental_strategy):
+        """Generate behaviors specific to prototype strategy and environmental conditions"""
+        behaviors = []
+        
+        prototype_id = prototype.get('prototype_id', 'unknown')
+        strategy = prototype.get('detailed_config', {}).get('spatial_config', {}).get('strategy', 'balanced')
+        
+        # Base behaviors for all prototypes
+        behaviors.extend([
+            Behavior(
+                element_id=f"B_{prototype_id}_thermal",
+                name="Thermal Comfort Performance",
+                description=f"Maintain comfortable temperature in {strategy} layout",
+                target_value=0.8,  # 80% comfort hours
+                current_value=environmental_strategy.get('thermal_performance', 0.7)
+            ),
+            Behavior(
+                element_id=f"B_{prototype_id}_daylight",
+                name="Natural Daylight Performance", 
+                description=f"Achieve adequate daylight factor for {strategy} arrangement",
+                target_value=0.03,  # 3% daylight factor
+                current_value=environmental_strategy.get('daylight_factor', 0.025)
+            ),
+            Behavior(
+                element_id=f"B_{prototype_id}_ventilation",
+                name="Natural Ventilation Performance",
+                description=f"Optimize air flow in {strategy} configuration",
+                target_value=0.75,  # Ventilation effectiveness
+                current_value=environmental_strategy.get('ventilation_effectiveness', 0.6)
+            )
+        ])
+        
+        # Strategy-specific behaviors
+        if strategy == 'central_core':
+            behaviors.append(Behavior(
+                element_id=f"B_{prototype_id}_circulation",
+                name="Central Core Circulation Efficiency",
+                description="Minimize travel distances from central hub",
+                target_value=0.85,
+                current_value=0.75
+            ))
+        elif strategy == 'linear_progression':
+            behaviors.append(Behavior(
+                element_id=f"B_{prototype_id}_privacy",
+                name="Progressive Privacy Gradient",
+                description="Achieve privacy transition from public to private zones",
+                target_value=0.9,
+                current_value=0.8
+            ))
+        elif strategy == 'courtyard_focused':
+            behaviors.append(Behavior(
+                element_id=f"B_{prototype_id}_microclimate",
+                name="Courtyard Microclimate Control",
+                description="Optimize courtyard for cooling and light distribution",
+                target_value=0.8,
+                current_value=0.7
+            ))
+        
+        return behaviors
+
+    def _generate_prototype_specific_structures(self, prototype, requirements, spatial_config):
+        """Generate structures specific to prototype spatial configuration"""
+        structures = []
+        
+        prototype_id = prototype.get('prototype_id', 'unknown')
+        strategy = spatial_config.get('strategy', 'balanced')
+        plot_utilization = spatial_config.get('plot_utilization', 0.7)
+        
+        # Base structures
+        structures.extend([
+            Structure(
+                element_id=f"S_{prototype_id}_envelope",
+                name="Building Envelope System",
+                description=f"Physical shell optimized for {strategy} layout",
+                geometric_properties={
+                    'plot_utilization': plot_utilization,
+                    'compactness_factor': spatial_config.get('compactness_factor', 0.8),
+                    'orientation': spatial_config.get('orientation', 'south')
+                }
+            ),
+            Structure(
+                element_id=f"S_{prototype_id}_circulation",
+                name="Circulation Network",
+                description=f"Movement pathways for {strategy} arrangement",
+                geometric_properties={
+                    'circulation_efficiency': spatial_config.get('circulation_efficiency', 0.75),
+                    'total_circulation_area': spatial_config.get('circulation_area', 200)
+                }
+            )
+        ])
+        
+        # Strategy-specific structures
+        if strategy == 'central_core':
+            structures.append(Structure(
+                element_id=f"S_{prototype_id}_core",
+                name="Central Activity Core",
+                description="Primary hub for family activities and circulation",
+                geometric_properties={
+                    'core_area': spatial_config.get('core_area', 300),
+                    'radial_connections': spatial_config.get('connections', 6)
+                }
+            ))
+        elif strategy == 'courtyard_focused':
+            structures.append(Structure(
+                element_id=f"S_{prototype_id}_courtyard",
+                name="Internal Courtyard System",
+                description="Central courtyard for climate control and light",
+                geometric_properties={
+                    'courtyard_area': spatial_config.get('courtyard_area', 150),
+                    'courtyard_ratio': spatial_config.get('courtyard_ratio', 0.2)
+                }
+            ))
+        
+        return structures
+
+    def _predict_prototype_specific_performance(self, prototype):
+        """Predict performance metrics for specific prototype"""
+        strategy = prototype.get('detailed_config', {}).get('spatial_config', {}).get('strategy', 'balanced')
+        final_score = prototype.get('final_score', 0.6)
+        
+        base_performance = {
+            'energy_efficiency': min(0.9, final_score + 0.1),
+            'thermal_comfort': final_score * 0.9,
+            'natural_lighting': final_score * 0.85,
+            'ventilation_effectiveness': final_score * 0.8,
+            'space_utilization': final_score * 0.95
+        }
+        
+        # Strategy-specific adjustments
+        if strategy == 'central_core':
+            base_performance['circulation_efficiency'] = min(0.95, final_score + 0.15)
+            base_performance['social_connectivity'] = min(0.9, final_score + 0.1)
+        elif strategy == 'linear_progression':
+            base_performance['privacy_gradient'] = min(0.9, final_score + 0.1)
+            base_performance['functional_zoning'] = min(0.85, final_score + 0.05)
+        elif strategy == 'courtyard_focused':
+            base_performance['microclimate_control'] = min(0.85, final_score + 0.1)
+            base_performance['indoor_outdoor_integration'] = min(0.9, final_score + 0.15)
+        
+        return base_performance
+    def generate_fbs_ontology(
+        self,
+        requirements: ParsedRequirements,
+        project_name: str
+    ) -> FBSOntology:
+        """Generate a general FBS ontology based on user requirements."""
+        ontology = FBSOntology(project_name=project_name)
+        
+        # Generate functions from spatial needs
+        for need in requirements.spatial_needs:
+            ontology.functions.append(Function(
+                element_id=f"F_{need.room_type}_{need.quantity}",
+                name=f"Provide {need.quantity} {need.room_type.capitalize().replace('_', ' ')}(s)",
+                description=f"Accommodate {need.quantity} {need.room_type} with min area {need.min_area or 'unspecified'}"
+            ))
+        
+        # Generate behaviors (e.g., budget, orientation)
+        ontology.behaviors.append(Behavior(
+            element_id="B_budget_01",
+            name="Control Project Cost",
+            description="Ensure design fits within budget constraints",
+            target_value=requirements.budget,
+            current_value=None  # To be evaluated later
+        ))
+        ontology.behaviors.append(Behavior(
+            element_id="B_orientation_01",
+            name="Optimize Site Orientation",
+            description=f"Align design with {requirements.site_constraints.orientation} orientation for environmental performance",
+            target_value="Optimal daylight and ventilation",
+            current_value=None
+        ))
+        
+        # Generate structures (e.g., site plot, basic rooms)
+        ontology.structures.append(Structure(
+            element_id="S_site_01",
+            name="Site Plot",
+            description="Overall building site",
+            geometric_properties={
+                'length': requirements.site_constraints.plot_length,
+                'width': requirements.site_constraints.plot_width,
+                'orientation': requirements.site_constraints.orientation
+            }
+        ))
+        for need in requirements.spatial_needs:
+            for i in range(need.quantity):
+                ontology.structures.append(Structure(
+                    element_id=f"S_{need.room_type}_{i+1}",
+                    name=f"{need.room_type.capitalize().replace('_', ' ')} {i+1}",
+                    description=f"Structural element for {need.room_type}",
+                    geometric_properties={'min_area': need.min_area or 100.0}
+                ))
+        
+        logger.info(
+            f"Generated FBS ontology for project '{project_name}' "
+            f"with {len(ontology.functions)} functions, "
+            f"{len(ontology.behaviors)} behaviors, and "
+            f"{len(ontology.structures)} structures"
+        )
+        return ontology
     def map_fbs_to_layout(self, layout: List[Dict], prototype: Dict[str, Any]) -> FBSOntology:
         """Generate FBS ontology for a specific layout (for flowchart's T: FBS Ontology per Layout)."""
         # Similar to generate_prototype_specific_fbs_ontology, but layout-focused

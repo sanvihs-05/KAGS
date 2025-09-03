@@ -1,0 +1,152 @@
+<?xml version='1.0' encoding='utf-8'?>
+<svg width="845.0" height="863.3" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 845.0 863.3">
+  <style>
+        .room-rect {
+            stroke: #2C3E50;
+            stroke-width: 2.0;
+            opacity: 0.9;
+        }
+        .room-label {
+            font-family: Arial, sans-serif;
+            font-size: 12px;
+            font-weight: bold;
+            text-anchor: middle;
+            dominant-baseline: middle;
+            fill: white;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+        }
+        .dimension-line {
+            stroke: #E74C3C;
+            stroke-width: 1;
+            marker-end: url(#arrowhead);
+        }
+        .dimension-text {
+            font-family: Arial, sans-serif;
+            font-size: 10px;
+            fill: #E74C3C;
+            text-anchor: middle;
+        }
+        .grid-line {
+            stroke: #ECF0F1;
+            stroke-width: 0.5;
+            opacity: 0.5;
+        }
+        .title-text {
+            font-family: Arial, sans-serif;
+            font-size: 16px;
+            font-weight: bold;
+            fill: #2C3E50;
+        }
+        .compass {
+            font-family: Arial, sans-serif;
+            font-size: 14px;
+            font-weight: bold;
+        }
+        </style>
+  <g class="grid">
+    <line x1="0.0" y1="0" x2="0.0" y2="863.3" class="grid-line" />
+    <line x1="25.0" y1="0" x2="25.0" y2="863.3" class="grid-line" />
+    <line x1="50.0" y1="0" x2="50.0" y2="863.3" class="grid-line" />
+    <line x1="75.0" y1="0" x2="75.0" y2="863.3" class="grid-line" />
+    <line x1="100.0" y1="0" x2="100.0" y2="863.3" class="grid-line" />
+    <line x1="125.0" y1="0" x2="125.0" y2="863.3" class="grid-line" />
+    <line x1="150.0" y1="0" x2="150.0" y2="863.3" class="grid-line" />
+    <line x1="175.0" y1="0" x2="175.0" y2="863.3" class="grid-line" />
+    <line x1="200.0" y1="0" x2="200.0" y2="863.3" class="grid-line" />
+    <line x1="225.0" y1="0" x2="225.0" y2="863.3" class="grid-line" />
+    <line x1="250.0" y1="0" x2="250.0" y2="863.3" class="grid-line" />
+    <line x1="275.0" y1="0" x2="275.0" y2="863.3" class="grid-line" />
+    <line x1="300.0" y1="0" x2="300.0" y2="863.3" class="grid-line" />
+    <line x1="325.0" y1="0" x2="325.0" y2="863.3" class="grid-line" />
+    <line x1="350.0" y1="0" x2="350.0" y2="863.3" class="grid-line" />
+    <line x1="375.0" y1="0" x2="375.0" y2="863.3" class="grid-line" />
+    <line x1="400.0" y1="0" x2="400.0" y2="863.3" class="grid-line" />
+    <line x1="425.0" y1="0" x2="425.0" y2="863.3" class="grid-line" />
+    <line x1="450.0" y1="0" x2="450.0" y2="863.3" class="grid-line" />
+    <line x1="475.0" y1="0" x2="475.0" y2="863.3" class="grid-line" />
+    <line x1="500.0" y1="0" x2="500.0" y2="863.3" class="grid-line" />
+    <line x1="525.0" y1="0" x2="525.0" y2="863.3" class="grid-line" />
+    <line x1="550.0" y1="0" x2="550.0" y2="863.3" class="grid-line" />
+    <line x1="575.0" y1="0" x2="575.0" y2="863.3" class="grid-line" />
+    <line x1="600.0" y1="0" x2="600.0" y2="863.3" class="grid-line" />
+    <line x1="625.0" y1="0" x2="625.0" y2="863.3" class="grid-line" />
+    <line x1="650.0" y1="0" x2="650.0" y2="863.3" class="grid-line" />
+    <line x1="675.0" y1="0" x2="675.0" y2="863.3" class="grid-line" />
+    <line x1="700.0" y1="0" x2="700.0" y2="863.3" class="grid-line" />
+    <line x1="725.0" y1="0" x2="725.0" y2="863.3" class="grid-line" />
+    <line x1="750.0" y1="0" x2="750.0" y2="863.3" class="grid-line" />
+    <line x1="775.0" y1="0" x2="775.0" y2="863.3" class="grid-line" />
+    <line x1="800.0" y1="0" x2="800.0" y2="863.3" class="grid-line" />
+    <line x1="825.0" y1="0" x2="825.0" y2="863.3" class="grid-line" />
+    <line x1="0" y1="0.0" x2="845.0" y2="0.0" class="grid-line" />
+    <line x1="0" y1="25.0" x2="845.0" y2="25.0" class="grid-line" />
+    <line x1="0" y1="50.0" x2="845.0" y2="50.0" class="grid-line" />
+    <line x1="0" y1="75.0" x2="845.0" y2="75.0" class="grid-line" />
+    <line x1="0" y1="100.0" x2="845.0" y2="100.0" class="grid-line" />
+    <line x1="0" y1="125.0" x2="845.0" y2="125.0" class="grid-line" />
+    <line x1="0" y1="150.0" x2="845.0" y2="150.0" class="grid-line" />
+    <line x1="0" y1="175.0" x2="845.0" y2="175.0" class="grid-line" />
+    <line x1="0" y1="200.0" x2="845.0" y2="200.0" class="grid-line" />
+    <line x1="0" y1="225.0" x2="845.0" y2="225.0" class="grid-line" />
+    <line x1="0" y1="250.0" x2="845.0" y2="250.0" class="grid-line" />
+    <line x1="0" y1="275.0" x2="845.0" y2="275.0" class="grid-line" />
+    <line x1="0" y1="300.0" x2="845.0" y2="300.0" class="grid-line" />
+    <line x1="0" y1="325.0" x2="845.0" y2="325.0" class="grid-line" />
+    <line x1="0" y1="350.0" x2="845.0" y2="350.0" class="grid-line" />
+    <line x1="0" y1="375.0" x2="845.0" y2="375.0" class="grid-line" />
+    <line x1="0" y1="400.0" x2="845.0" y2="400.0" class="grid-line" />
+    <line x1="0" y1="425.0" x2="845.0" y2="425.0" class="grid-line" />
+    <line x1="0" y1="450.0" x2="845.0" y2="450.0" class="grid-line" />
+    <line x1="0" y1="475.0" x2="845.0" y2="475.0" class="grid-line" />
+    <line x1="0" y1="500.0" x2="845.0" y2="500.0" class="grid-line" />
+    <line x1="0" y1="525.0" x2="845.0" y2="525.0" class="grid-line" />
+    <line x1="0" y1="550.0" x2="845.0" y2="550.0" class="grid-line" />
+    <line x1="0" y1="575.0" x2="845.0" y2="575.0" class="grid-line" />
+    <line x1="0" y1="600.0" x2="845.0" y2="600.0" class="grid-line" />
+    <line x1="0" y1="625.0" x2="845.0" y2="625.0" class="grid-line" />
+    <line x1="0" y1="650.0" x2="845.0" y2="650.0" class="grid-line" />
+    <line x1="0" y1="675.0" x2="845.0" y2="675.0" class="grid-line" />
+    <line x1="0" y1="700.0" x2="845.0" y2="700.0" class="grid-line" />
+    <line x1="0" y1="725.0" x2="845.0" y2="725.0" class="grid-line" />
+    <line x1="0" y1="750.0" x2="845.0" y2="750.0" class="grid-line" />
+    <line x1="0" y1="775.0" x2="845.0" y2="775.0" class="grid-line" />
+    <line x1="0" y1="800.0" x2="845.0" y2="800.0" class="grid-line" />
+    <line x1="0" y1="825.0" x2="845.0" y2="825.0" class="grid-line" />
+    <line x1="0" y1="850.0" x2="845.0" y2="850.0" class="grid-line" />
+  </g>
+  <g transform="translate(785.0, 20)">
+    <circle cx="20.0" cy="20.0" r="18.0" fill="white" stroke="#2C3E50" stroke-width="2" opacity="0.9" />
+    <polygon points="20.0,5.0 15.0,15.0 25.0,15.0" fill="#F39C12" />
+    <text x="20.0" y="8" text-anchor="middle" class="compass" fill="#F39C12">N</text>
+    <text x="20.0" y="36" text-anchor="middle" class="compass" fill="#2C3E50">S</text>
+    <text x="36" y="23.0" text-anchor="middle" class="compass" fill="#2C3E50">E</text>
+    <text x="4" y="23.0" text-anchor="middle" class="compass" fill="#2C3E50">W</text>
+    <circle cx="32" cy="8" r="3" fill="#F1C40F" stroke="#F39C12" stroke-width="1" />
+    <polygon points="8,8 12,4 12,12" fill="#3498DB" />
+  </g>
+  <rect x="300.0" y="300.0" width="150.0" height="133.3" fill="#9B59B6" class="room-rect" />
+  <text x="375.0" y="366.65" class="room-label">Living Room</text>
+  <text x="375.0" y="381.65" class="room-label" font-size="10">200 sq ft</text>
+  <rect x="300.0" y="438.29999999999995" width="120.0" height="100.0" fill="#27AE60" class="room-rect" />
+  <text x="360.0" y="488.29999999999995" class="room-label">Kitchen</text>
+  <text x="360.0" y="503.29999999999995" class="room-label" font-size="10">120 sq ft</text>
+  <rect x="425.0" y="438.29999999999995" width="120.0" height="125.0" fill="#3498DB" class="room-rect" />
+  <text x="485.0" y="500.79999999999995" class="room-label">Bedroom</text>
+  <text x="485.0" y="515.8" class="room-label" font-size="10">150 sq ft</text>
+  <rect x="475.0" y="361.9" width="70.0" height="71.39999999999999" fill="#E67E22" class="room-rect" />
+  <text x="510.0" y="397.59999999999997" class="room-label">Bathroom</text>
+  <text x="510.0" y="412.59999999999997" class="room-label" font-size="10">50 sq ft</text>
+  <text x="20" y="25" class="title-text">Optimized Layout Iter 1 - Fixed Floor Plan</text>
+  <text x="20" y="45" font-family="Arial, sans-serif" font-size="12" fill="#2C3E50">Total Area: 520 sq ft | Rooms: 4 | Efficiency: 80.0%</text>
+  <text x="20" y="65" font-family="Arial, sans-serif" font-size="10" fill="#7F8C8D">Generated: 2025-09-03 18:51</text>
+  <rect x="10" y="718.3" width="200" height="115" fill="white" stroke="#2C3E50" stroke-width="1" opacity="0.95" />
+  <text x="20" y="738.3" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#2C3E50">Room Types</text>
+  <rect x="20" y="750.3" width="12" height="12" fill="#E67E22" stroke="#2C3E50" stroke-width="0.5" />
+  <text x="40" y="758.3" font-family="Arial, sans-serif" font-size="11" fill="#2C3E50">Bathroom</text>
+  <rect x="20" y="770.3" width="12" height="12" fill="#3498DB" stroke="#2C3E50" stroke-width="0.5" />
+  <text x="40" y="778.3" font-family="Arial, sans-serif" font-size="11" fill="#2C3E50">Bedroom</text>
+  <rect x="20" y="790.3" width="12" height="12" fill="#27AE60" stroke="#2C3E50" stroke-width="0.5" />
+  <text x="40" y="798.3" font-family="Arial, sans-serif" font-size="11" fill="#2C3E50">Kitchen</text>
+  <rect x="20" y="810.3" width="12" height="12" fill="#9B59B6" stroke="#2C3E50" stroke-width="0.5" />
+  <text x="40" y="818.3" font-family="Arial, sans-serif" font-size="11" fill="#2C3E50">Living Room</text>
+</svg>
