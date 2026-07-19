@@ -160,18 +160,15 @@ class LayoutGenerationAgent:
         adjacency_matrix = self._build_adjacency_matrix(node.layout.rooms)
         logger.info(f"  → Adjacency matrix built: shape={adjacency_matrix.shape}")
         
-        # Step 3: Initial placement using force-directed layout
-        positions = self._force_directed_placement(room_specs, adjacency_matrix)
-        logger.info(f"  → Force-directed placement complete")
-        
-        # Step 4: Optimize positions with constraints
-        optimized_positions = self._optimize_layout(
-            positions, 
-            room_specs, 
-            adjacency_matrix,
-            site_boundary
+        # Step 3+4: Gap-free placement via zoned squarified treemap.
+        # Replaces force-directed + SLSQP, which leave gaps by construction
+        # (universal repulsion never lets rooms share a wall) — so their
+        # adjacency/compactness metrics could not be trusted. The treemap tiles
+        # the footprint exactly and preserves each room's target area.
+        optimized_positions = self._squarified_treemap_placement(
+            room_specs, node.layout.rooms
         )
-        logger.info(f"  → Layout optimization complete")
+        logger.info(f"  → Treemap placement complete (gap-free tiling)")
         
         # Step 5: Generate room polygons
         room_polygons = self._generate_room_polygons(optimized_positions, room_specs)
@@ -471,8 +468,129 @@ class LayoutGenerationAgent:
             initial_positions=None,
             bounds=(0, 0, 100, 100)
         )
-        
+
         return positions
+
+    # Room-type → zone lookup for treemap grouping (substring match).
+    _ZONE_KEYWORDS = {
+        'social': ['living', 'dining', 'kitchen', 'family', 'lounge', 'great'],
+        'private': ['bedroom', 'bed', 'bath', 'ensuite', 'wc', 'toilet',
+                    'study', 'office'],
+        # everything else (laundry, mudroom, garage, storage, utility, hall) → service
+    }
+
+    def _zone_of(self, room_type: str) -> str:
+        rt = (room_type or '').lower()
+        for zone, keywords in self._ZONE_KEYWORDS.items():
+            if any(k in rt for k in keywords):
+                return zone
+        return 'service'
+
+    def _squarified_treemap_placement(
+        self,
+        room_specs: Dict[str, Dict],
+        rooms: Dict[str, Room],
+        aspect: float = 1.2,
+        circulation_frac: float = 0.0,
+    ) -> Dict[str, Dict[str, float]]:
+        """
+        Gap-free rectangular dissection of the footprint.
+
+        Groups rooms into service | social | private zones, lays the zones out
+        as left-to-right columns sized by area, and squarifies rooms within
+        each zone. Returns {room_id: {x, y, width, length}} that tiles the
+        footprint exactly, so every room's tile area == its target area and
+        adjacency is real (rooms share walls). No gaps, no overlaps.
+
+        circulation_frac defaults to 0.0 so each tile == its target area (keeps
+        the drawn plan consistent with the areas the brief validator checks);
+        set it > 0 to reserve corridor space by inflating the footprint.
+        """
+        room_ids = list(room_specs.keys())
+        if not room_ids:
+            return {}
+
+        total_area = sum(room_specs[r]['area'] for r in room_ids)
+        footprint = total_area / max(1e-9, (1.0 - circulation_frac))
+        W = float(np.sqrt(footprint * max(aspect, 1e-6)))
+        H = footprint / max(W, 1e-9)
+
+        zones: Dict[str, List[str]] = {}
+        for rid in room_ids:
+            rtype = rooms[rid].room_type if rid in rooms else ''
+            zones.setdefault(self._zone_of(rtype), []).append(rid)
+
+        order = [z for z in ('service', 'social', 'private') if z in zones]
+        positions: Dict[str, Dict[str, float]] = {}
+        x_cursor = 0.0
+        for z in order:
+            zone_area = sum(room_specs[r]['area'] for r in zones[z]) / max(1e-9, (1.0 - circulation_frac))
+            zw = W * zone_area / max(footprint, 1e-9)
+            items = [(r, room_specs[r]['area']) for r in zones[z]]
+            placed = self._squarify_rect(items, x_cursor, 0.0, zw, H)
+            for rid, (rx, ry, rw, rh) in placed.items():
+                positions[rid] = {'x': rx, 'y': ry, 'width': rw, 'length': rh}
+            x_cursor += zw
+
+        return positions
+
+    @staticmethod
+    def _squarify_rect(items, x, y, w, h) -> Dict[str, tuple]:
+        """
+        Squarified treemap: tile rect (x, y, w, h) with items [(id, area)],
+        preferring near-square tiles. Returns {id: (x, y, w, h)}.
+        """
+        items = sorted(items, key=lambda t: -t[1])
+        total = sum(a for _, a in items) or 1.0
+        scale = (w * h) / total
+        items = [(n, a * scale) for n, a in items]  # areas now sum to w*h
+        out: Dict[str, tuple] = {}
+        rx, ry, rw, rh = x, y, w, h
+
+        def worst(row, length):
+            s = max(sum(a for _, a in row), 1e-9)
+            mx = max(a for _, a in row)
+            mn = min(a for _, a in row)
+            length = max(length, 1e-9)
+            return max((length ** 2 * mx) / (s ** 2), (s ** 2) / (length ** 2 * mn))
+
+        def layout_row(row, rx, ry, rw, rh):
+            s = sum(a for _, a in row)
+            if rw >= rh:  # horizontal shelf along the top edge
+                rowh = s / max(rw, 1e-9)
+                cx = rx
+                for n, a in row:
+                    cw = a / max(rowh, 1e-9)
+                    out[n] = (cx, ry, cw, rowh)
+                    cx += cw
+                return rx, ry + rowh, rw, rh - rowh
+            else:         # vertical shelf along the left edge
+                roww = s / max(rh, 1e-9)
+                cy = ry
+                for n, a in row:
+                    ch = a / max(roww, 1e-9)
+                    out[n] = (rx, cy, roww, ch)
+                    cy += ch
+                return rx + roww, ry, rw - roww, rh
+
+        row: list = []
+        i = 0
+        while i < len(items):
+            length = rw if rw >= rh else rh
+            if not row:
+                row = [items[i]]
+                i += 1
+                continue
+            if worst(row, length) >= worst(row + [items[i]], length):
+                row.append(items[i])
+                i += 1
+            else:
+                rx, ry, rw, rh = layout_row(row, rx, ry, rw, rh)
+                row = []
+        if row:
+            layout_row(row, rx, ry, rw, rh)
+
+        return out
     
     def _optimize_layout(
         self,
