@@ -301,19 +301,44 @@ class GraphOfThoughtsEngine:
         """Optimize behavior targets"""
         variants = []
         
-        # Strategy: Relax some behaviors to improve overall satisfaction
+        # Strategy A: Relax some behaviors to improve overall satisfaction
         if node.behaviors:
             variant = self._create_child_node(node, TransformationType.BEHAVIORAL_OPTIMIZATION)
-            
+
             # Relax behaviors with low satisfaction
             for behav in variant.behaviors.values():
                 if behav.actual_value and behav.target_value:
                     if not behav.is_satisfied:
                         behav.tolerance *= 1.3  # Increase tolerance
-            
+
             variant.metadata['description'] = 'Relaxed behavior tolerances'
             variants.append(variant)
-        
+
+        # Strategy B: Natural-ventilation trade-off — a REAL structural change the
+        # behavior physics reads. Removing the mechanical HVAC system drops the
+        # ventilation score (1.0 → ~0.75 with windows) while enlarged glazing
+        # keeps daylight strong: an honest design trade-off, so this variant
+        # earns a genuinely different S_b instead of a copied score.
+        if node.structures:
+            has_hvac = any(
+                getattr(s.structure_type, 'value', '') == 'mep'
+                for s in node.structures.values()
+            )
+            if has_hvac:
+                nat_variant = self._create_child_node(node, TransformationType.BEHAVIORAL_OPTIMIZATION)
+                nat_variant.structures = {
+                    sid: s for sid, s in nat_variant.structures.items()
+                    if getattr(s.structure_type, 'value', '') != 'mep'
+                }
+                for s in nat_variant.structures.values():
+                    dims = s.dimensions or {}
+                    if 'window_ratio' in dims:
+                        dims['window_ratio'] = min(0.40, float(dims['window_ratio']) * 1.25)
+                        s.dimensions = dims
+                nat_variant.metadata['description'] = 'Natural ventilation (no mechanical HVAC, enlarged glazing)'
+                nat_variant.metadata['ventilation_strategy'] = 'natural'
+                variants.append(nat_variant)
+
         return variants
     
     async def _structural_variation(self, node: FBSLLayoutNode) -> List[FBSLLayoutNode]:
@@ -337,16 +362,22 @@ class GraphOfThoughtsEngine:
         return variants
     
     async def _layout_permutation(self, node: FBSLLayoutNode) -> List[FBSLLayoutNode]:
-        """Generate layout permutations"""
+        """Generate layout permutations that differ in REAL geometry.
+
+        'layout_aspect' is read by the Layout Agent's treemap placement, so a
+        compact (near-square) and a linear (elongated) variant produce different
+        footprints — and therefore different compactness/circulation and S_l.
+        (The old version set a 'layout_strategy' label that nothing consumed.)
+        """
         variants = []
-        
-        # Strategy: Different spatial arrangements
-        variant = self._create_child_node(node, TransformationType.LAYOUT_PERMUTATION)
-        variant.metadata['description'] = 'Alternative spatial arrangement'
-        variant.metadata['layout_strategy'] = 'compact' if len(variants) % 2 == 0 else 'linear'
-        
-        variants.append(variant)
-        
+
+        for strategy, aspect in (('compact', 1.05), ('linear', 2.4)):
+            variant = self._create_child_node(node, TransformationType.LAYOUT_PERMUTATION)
+            variant.metadata['description'] = f'{strategy.title()} spatial arrangement (aspect {aspect})'
+            variant.metadata['layout_strategy'] = strategy
+            variant.metadata['layout_aspect'] = aspect
+            variants.append(variant)
+
         return variants
     
     def _create_child_node(self, parent: FBSLLayoutNode, 

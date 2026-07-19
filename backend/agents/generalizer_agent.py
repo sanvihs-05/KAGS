@@ -200,14 +200,47 @@ class GeneralizerAgent:
         
         # Copy metadata
         variant.metadata = copy.deepcopy(problem_node.metadata)
-        
+
         # Add variant-specific metadata
         variant.metadata['variant_type'] = variant_type
         variant.metadata['description'] = description
-        
+
+        self._apply_variant_physics(variant, variant_type)
         return variant
-    
-    def _create_variant(self, problem_node: FBSLLayoutNode, 
+
+    # Real per-variant transformations: parameters the layout/physics actually
+    # read, so each variant earns a different score instead of copying one.
+    #   layout_aspect  → treemap footprint (compactness / circulation → S_l)
+    #   window_scale   → glazing fraction (daylight → S_b)
+    #   partition_thk  → partition thickness (acoustic STC → S_b, when scored)
+    _VARIANT_PHYSICS = {
+        'compact_zonal':       dict(layout_aspect=1.05, window_scale=1.00, partition_thk=None),
+        'linear_zonal':        dict(layout_aspect=2.20, window_scale=1.00, partition_thk=None),
+        'central_circulation': dict(layout_aspect=1.00, window_scale=1.10, partition_thk=None),
+        'linear_circulation':  dict(layout_aspect=1.80, window_scale=0.95, partition_thk=None),
+        'natural_light':       dict(layout_aspect=1.35, window_scale=1.35, partition_thk=0.08),
+        'privacy':             dict(layout_aspect=1.15, window_scale=0.85, partition_thk=0.18),
+    }
+
+    def _apply_variant_physics(self, variant: FBSLLayoutNode, variant_type: str) -> None:
+        """Apply the variant's real parameter changes (no-op for unknown types)."""
+        cfg = self._VARIANT_PHYSICS.get(variant_type)
+        if not cfg:
+            return
+
+        variant.metadata['layout_aspect'] = cfg['layout_aspect']
+
+        for struct in variant.structures.values():
+            dims = struct.dimensions or {}
+            if cfg['window_scale'] != 1.0 and 'window_ratio' in dims:
+                dims['window_ratio'] = round(
+                    min(0.40, max(0.05, float(dims['window_ratio']) * cfg['window_scale'])), 3)
+                struct.dimensions = dims
+            if cfg['partition_thk'] is not None and 'partition' in (struct.name or '').lower():
+                dims['thickness'] = cfg['partition_thk']
+                struct.dimensions = dims
+
+    def _create_variant(self, problem_node: FBSLLayoutNode,
                        variant_type: str, 
                        zones: Dict,
                        description: str = None) -> FBSLLayoutNode:
@@ -256,7 +289,8 @@ class GeneralizerAgent:
         variant.metadata['zones'] = {k: [fid for fid, _ in v] for k, v in zones.items()}
         if description:
             variant.metadata['description'] = description
-        
+
+        self._apply_variant_physics(variant, variant_type)
         return variant
 
 

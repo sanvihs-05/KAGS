@@ -165,10 +165,19 @@ class LayoutGenerationAgent:
         # (universal repulsion never lets rooms share a wall) — so their
         # adjacency/compactness metrics could not be trusted. The treemap tiles
         # the footprint exactly and preserves each room's target area.
+        # Variant-controlled footprint aspect: variants set metadata['layout_aspect']
+        # (compact ~1.05 … linear ~2.4), which changes real geometry and therefore
+        # compactness/circulation — so layout variants earn different S_l scores.
+        try:
+            aspect = float(node.metadata.get('layout_aspect', 1.2) or 1.2)
+        except (TypeError, ValueError):
+            aspect = 1.2
+        aspect = min(max(aspect, 0.4), 4.0)
+
         optimized_positions = self._squarified_treemap_placement(
-            room_specs, node.layout.rooms
+            room_specs, node.layout.rooms, aspect=aspect
         )
-        logger.info(f"  → Treemap placement complete (gap-free tiling)")
+        logger.info(f"  → Treemap placement complete (gap-free tiling, aspect={aspect:.2f})")
         
         # Step 5: Generate room polygons
         room_polygons = self._generate_room_polygons(optimized_positions, room_specs)
