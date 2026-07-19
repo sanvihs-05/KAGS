@@ -116,20 +116,98 @@ class ResearchAgent:
         
         return recommendations
     
-    def enhance_node_with_research(self, node: FBSLLayoutNode, 
+    def reconcile_areas_with_precedents(
+        self,
+        node: FBSLLayoutNode,
+        findings: Dict,
+        lam: float = 0.6,
+    ) -> int:
+        """
+        Deterministic reconciliation: ground each room's area in the retrieved
+        precedents so generation is actually CONDITIONED on retrieval (RAG),
+        not merely annotated by it.
+
+        For each function whose precedents carry an 'area', blend the stated
+        area with a similarity-weighted precedent estimate:
+
+            â_precedent = Σ_i sim_i · area_i / Σ_i sim_i
+            a* = lam · a_stated + (1 - lam) · â_precedent
+
+        The result is CLAMPED to the brief's [min_area, max_area] band so
+        reconciliation can nudge a room but never push the design outside the
+        brief (the validator stays satisfied). No-op for rooms whose precedents
+        expose no area. Returns the number of rooms adjusted.
+        """
+        room_precedents = (findings or {}).get('room_precedents', {})
+        if not room_precedents or not node.layout or not node.layout.rooms:
+            return 0
+
+        # function_id -> its room  (rooms link back via function_id)
+        room_by_func = {
+            r.function_id: r for r in node.layout.rooms.values()
+            if getattr(r, 'function_id', None)
+        }
+
+        adjusted = 0
+        for func_id, func in node.functions.items():
+            precedents = room_precedents.get(func.name, [])
+            # similarity-weighted precedent area over precedents that expose one
+            num, den = 0.0, 0.0
+            for p in precedents:
+                area = p.get('area')
+                sim = float(p.get('similarity', 0.0) or 0.0)
+                if area is not None and sim > 0:
+                    num += sim * float(area)
+                    den += sim
+            if den <= 0:
+                continue
+
+            est = num / den
+            room = room_by_func.get(func_id)
+            if room is None:
+                continue
+
+            stated = float(room.area) if room.area else est
+            blended = lam * stated + (1.0 - lam) * est
+
+            # clamp to the brief band so the validator can never be broken
+            sr = getattr(func, 'spatial_requirements', None) or {}
+            lo = float(sr.get('min_area', blended * 0.5))
+            hi = float(sr.get('max_area', blended * 1.5))
+            new_area = float(min(max(blended, lo), hi))
+
+            if abs(new_area - room.area) > 1e-6:
+                room.area = new_area
+                if isinstance(sr, dict):
+                    sr['preferred_area'] = new_area
+                adjusted += 1
+
+        if adjusted:
+            logger.info(f"✓ RAG reconciliation adjusted {adjusted} room area(s) from precedents")
+        return adjusted
+
+    def enhance_node_with_research(self, node: FBSLLayoutNode,
                                    findings: Dict) -> FBSLLayoutNode:
         """Apply research findings to enhance node"""
-        
+
         # Add research metadata
         node.metadata['research_findings'] = findings
         node.metadata['precedents_count'] = len(findings['similar_spaces'])
-        
+
         # Store recommendations
         if 'recommended_adjacencies' not in node.metadata:
             node.metadata['recommended_adjacencies'] = []
-        
+
         for rec in findings['recommendations']:
             if rec['priority'] == 'high':
                 node.metadata['recommended_adjacencies'].append(rec)
-        
+
+        # ✅ Ground room areas in precedents so generation depends on retrieval
+        # (safe no-op when precedents expose no area; result clamped to brief band).
+        try:
+            n_adj = self.reconcile_areas_with_precedents(node, findings)
+            node.metadata['rag_areas_reconciled'] = n_adj
+        except Exception as e:
+            logger.warning(f"RAG area reconciliation skipped: {e}")
+
         return node

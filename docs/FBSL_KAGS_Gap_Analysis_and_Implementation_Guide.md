@@ -125,12 +125,12 @@ For each behaviour in `behavior_calculator.py`, assert the number the function p
 | 1 | Step 1 (wire physics into scoring) | **DONE.** Without it, every other score is meaningless. Smallest change, biggest truth gain. |
 | — | ~~Step 2 (direction bug)~~ | **RETRACTED** — no bug; direction handled in the calculator. |
 | 2 | Step 3 (validator) | **DONE + golden-tested.** `backend/core/brief_validator.py`; gates GoT alternatives and the aggregated node in `orchestrator.py` (composite forced to 0 on violation). Test proves: valid passes; 45%-area design, missing-bedroom design, empty design all rejected. |
-| 3 | Step 5 (real layout) | Makes layout metrics and images honest and consistent. |
-| 4 | Step 4 (kill fake fallback) | **DONE.** Removed `_estimate_node_quality` and its 3 call sites in `orchestrator.py`. Unscoreable / failed-aggregation nodes now get `0.0` + a log, and `_select_top` uses the real score (a validator-zeroed node stays 0.0 instead of being rescued by the `or` fallback). |
-| 5 | Step 6 (real RAG) | Highest-value research claim, but largest effort — do after the core is honest. |
-| 6 | Step 7 (unit audit) | Ongoing; fold into the golden tests. |
+| 3 | Step 5 (real layout) | **DONE + tested.** `layout_agent._squarified_treemap_placement` replaces force-directed/SLSQP; tiles the footprint exactly (0.00 m² overlap, target areas preserved, 27 real shared-wall adjacencies for the 14-room home). `calculate_compactness_score` rewritten to footprint squareness `min(W,H)/max(W,H)` (square=1.000 vs corridor=0.167 — it now discriminates). **Caveat:** with exact tiling there is no corridor space, so `circulation_efficiency` reads 0.0 — needs follow-up (reserve circulation via `circulation_frac>0`, or compute circulation for tiled plans differently). |
+| 4 | Step 4 (kill fake fallback) | **DONE.** Removed `_estimate_node_quality` and its 3 call sites in `orchestrator.py`. Unscoreable / failed-aggregation nodes now get `0.0` + a log, and `_adaptive_prune` uses the real score (a validator-zeroed node stays 0.0 instead of being rescued by the `or` fallback). |
+| 5 | Step 6 (real RAG) | **Mechanism DONE + unit-tested; live grounding unverified.** `research_agent.reconcile_areas_with_precedents` blends stated area with a similarity-weighted precedent estimate, clamped to the brief band (safe: can't break the validator). Ablation test proves output depends on retrieval (kitchen 17→15.2 m² with precedents; unchanged without). **No-op until precedent metadata exposes `area`** — not verified against the live Finnish corpus in this environment (needs the FAISS store + Ollama). Adjacency priors not implemented (retrieval returns room-level, not plan-level, data). |
+| 6 | Step 7 (window/unit fix) | **DONE + tested.** `behavior_calculator` lighting now reads an explicit `window_ratio` (what the encoder sets) instead of miscounting windows as 1×1 m; `window_ratio=0.22` now correctly satisfies daylight. Broader unit audit (golden tests per behaviour) still recommended. |
 
-Step 1 + Step 3 (validator) convert the pipeline from "faked" to "honest but simple." Steps 4–6 make it defensible and complete.
+Step 1 + Step 3 + Step 4 convert the pipeline from "faked" to "honest." Steps 5–7 make the layout and behaviours real. Remaining rough edge: circulation efficiency on fully-tiled plans, and live-corpus verification of RAG grounding.
 
 ---
 

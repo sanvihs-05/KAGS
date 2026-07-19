@@ -295,19 +295,31 @@ class BehaviorCalculator:
         ]
         
         has_windows = len(window_structures) > 0
-        
+
+        # Aggregate glazing. Prefer an explicit per-window 'window_ratio' (the
+        # glazing fraction the encoder sets); otherwise derive area from
+        # width x height. Fixes a field mismatch where windows carrying only
+        # 'window_ratio' were miscounted as 1x1 m = 1 m² each.
         total_window_area = 0.0
+        declared_ratios = []
         for window in window_structures:
-            if window.dimensions:
-                width = window.dimensions.get('width', 1.0)
-                height = window.dimensions.get('height', 1.0)
-                total_window_area += width * height
-        
+            dims = window.dimensions or {}
+            if 'window_ratio' in dims:
+                declared_ratios.append(float(dims['window_ratio']))
+            elif 'width' in dims or 'height' in dims:
+                total_window_area += dims.get('width', 1.0) * dims.get('height', 1.0)
+            else:
+                total_window_area += 1.0  # last-resort nominal glazing
+
         if node.layout and node.layout.rooms:
             total_floor_area = sum(r.area for r in node.layout.rooms.values())
-            
+
             if total_floor_area > 0:
-                window_ratio = total_window_area / total_floor_area
+                if declared_ratios:
+                    # building glazing fraction = mean of declared per-room ratios
+                    window_ratio = float(np.mean(declared_ratios))
+                else:
+                    window_ratio = total_window_area / total_floor_area
                 glass_transmittance = 0.75
                 daylight_factor = window_ratio * glass_transmittance * 100
                 

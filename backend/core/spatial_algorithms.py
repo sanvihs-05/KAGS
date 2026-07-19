@@ -683,25 +683,30 @@ def calculate_compactness_score(
     room_positions: Dict[str, Dict[str, float]]
 ) -> float:
     """
-    Calculate layout compactness score
-    
-    Formula: compactness = total_room_area / bounding_box_area
+    Calculate layout compactness as footprint squareness: min(W, H) / max(W, H)
+    of the plan's bounding box. 1.0 = square plan; -> 0 = long/thin corridor.
+
+    Replaces total_room_area / bounding_box_area, which for a gap-free tiled
+    plan is always ~1.0 and cannot distinguish a square from a corridor.
+
+    Positions carry the room CENTROID as (x, y) plus bbox width/height (or
+    'length'), so each room's true extent is [x - w/2, x + w/2] x [y - h/2,
+    y + h/2].
     """
     if not room_positions:
         return 0.0
-    
-    # Calculate bounding box
-    xs = [pos['x'] for pos in room_positions.values()]
-    ys = [pos['y'] for pos in room_positions.values()]
-    widths = [pos.get('width', 5.0) for pos in room_positions.values()]
-    heights = [pos.get('height', 5.0) for pos in room_positions.values()]
-    
-    min_x = min(xs)
-    max_x = max(x + w for x, w in zip(xs, widths))
-    min_y = min(ys)
-    max_y = max(y + h for y, h in zip(ys, heights))
-    
-    bbox_area = (max_x - min_x) * (max_y - min_y)
-    total_room_area = sum(w * h for w, h in zip(widths, heights))
-    
-    return total_room_area / max(bbox_area, 1.0)
+
+    xs_lo, xs_hi, ys_lo, ys_hi = [], [], [], []
+    for pos in room_positions.values():
+        w = pos.get('width', 5.0)
+        h = pos.get('height', pos.get('length', 5.0))
+        cx, cy = pos['x'], pos['y']
+        xs_lo.append(cx - w / 2.0); xs_hi.append(cx + w / 2.0)
+        ys_lo.append(cy - h / 2.0); ys_hi.append(cy + h / 2.0)
+
+    W = max(xs_hi) - min(xs_lo)
+    H = max(ys_hi) - min(ys_lo)
+    if W <= 0 or H <= 0:
+        return 0.0
+
+    return min(W, H) / max(W, H)
