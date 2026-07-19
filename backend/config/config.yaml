@@ -1,0 +1,54 @@
+database:
+  host: localhost
+  port: 5432
+  database: fbsl_kags
+  user: fbsl_user
+  password: postgres
+
+vector_store:
+  persist_directory: ./chroma_db
+  embedding_model: all-MiniLM-L6-v2
+  
+  # Your existing Finnish floor plan embeddings
+  existing_embeddings:
+    enabled: true
+    path: "C:\\Users\\sanvi\\OneDrive\\Desktop\\layout\\enhanced_multimodal_rag_store"
+    default_embedding_type: composite
+    available_types:
+      - architectural
+      - composite
+      - spatial
+      - text
+      - visual
+    # Finnish-specific settings
+    language: finnish
+    dataset: cubicasa5k
+    features:
+      - room_types
+      - spatial_relationships
+      - visual_features
+      - architectural_context
+
+llm:
+  # Local Ollama model (working): llama3.1:8b
+  # To use Claude Haiku 4.5: set provider: anthropic, model: claude-haiku-4.5
+  # and install Anthropic SDK, then set ANTHROPIC_API_KEY environment variable.
+  provider: ollama
+  model: llama3.1:8b
+  temperature: 0.3
+  max_tokens: 4096
+  base_url: http://localhost:11434
+
+api:
+  host: 0.0.0.0
+  port: 8000
+  cors_origins:
+    - http://localhost:3000
+
+scoring:
+  weights:
+    functional_adequacy: 0.25
+    behavioral_performance: 0.20
+    structural_feasibility: 0.20
+    layout_efficiency: 0.25
+    sustainability: 0.10

@@ -1,0 +1,11 @@
+{
+  "project_name": "Sustainable_Family_Home_Demo",
+  "requirements": "\n    Design a sustainable 4-bedroom family home for a family of 5 (2 adults, 3 children aged 8, 12, 15).\n    \n    FUNCTIONAL REQUIREMENTS:\n    - 4 bedrooms (1 master suite, 3 children's bedrooms)\n    - Home office/study space (remote work capability)\n    - Open-plan living/dining/kitchen area\n    - 2.5 bathrooms (master ensuite, family bathroom, powder room)\n    - Laundry/utility room\n    - Outdoor connection (patio/deck)\n    - Storage solutions throughout\n    \n    SUSTAINABILITY REQUIREMENTS:\n    - Passive solar design principles\n    - Natural ventilation and daylighting\n    - Energy-efficient envelope (U-value < 0.25 W/m\u00b2K)\n    - Renewable materials preference\n    - Water conservation features\n    - Target: Net-zero energy ready\n    \n    SPATIAL REQUIREMENTS:\n    - Total area: 180-220 sqm\n    - Master bedroom: 18-22 sqm with ensuite\n    - Children's bedrooms: 12-15 sqm each\n    - Home office: 10-12 sqm (quiet location)\n    - Living/dining/kitchen: 45-55 sqm (open plan)\n    - Outdoor living: 20-25 sqm\n    \n    SITE CONTEXT:\n    - Suburban location\n    - North-facing preferred orientation\n    - Moderate climate (hot summers, mild winters)\n    - Privacy from neighbors required\n    - Street noise considerations\n    \n    DESIGN PRIORITIES:\n    1. Family interaction and flexibility\n    2. Environmental performance\n    3. Privacy and acoustic separation\n    4. Natural light and ventilation\n    5. Future adaptability\n    ",
+  "pipeline_config": {
+    "max_alternatives": 5,
+    "got_delta": 0.05,
+    "got_patience": 3,
+    "got_max_nodes": 50,
+    "top_k": 5
+  }
+}

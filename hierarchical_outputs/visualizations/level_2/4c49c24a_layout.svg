@@ -1,0 +1,52 @@
+<?xml version='1.0' encoding='utf-8'?>
+<svg xmlns="http://www.w3.org/2000/svg" width="783.0314901051134" height="784.1726666008013" viewBox="0 0 783.0314901051134 784.1726666008013">
+  <style>
+        .room { stroke: #2C3E50; stroke-width: 2; opacity: 0.9; }
+        .room-label { font-family: Arial; font-size: 12px; font-weight: bold; 
+                     fill: white; text-anchor: middle; dominant-baseline: middle; }
+        .title { font-family: Arial; font-size: 16px; font-weight: bold; fill: #2C3E50; }
+        </style>
+  <text x="20" y="25" class="title">Spatial Compactness R2 - Layout</text>
+  <rect x="357.25189143305226" y="300" width="38.266434377924476" height="38.266434377924476" fill="#27AE60" class="room" />
+  <text x="376.3851086220145" y="314.13321718896225" class="room-label">Kitchen</text>
+  <text x="376.3851086220145" y="329.13321718896225" class="room-label" font-size="10">(Kitchen)</text>
+  <rect x="400.51832581097676" y="300" width="41.318276827573534" height="41.318276827573534" fill="#3498DB" class="room" />
+  <text x="421.1774642247635" y="315.65913841378676" class="room-label">Master Bedroom</text>
+  <text x="421.1774642247635" y="330.65913841378676" class="room-label" font-size="10">(Bedroom)</text>
+  <rect x="400.51832581097676" y="346.3182768275735" width="34.56935058689995" height="34.56935058689995" fill="#3498DB" class="room" />
+  <text x="417.80300110442676" y="358.6029521210235" class="room-label">Bedroom 2</text>
+  <text x="417.80300110442676" y="373.6029521210235" class="room-label" font-size="10">(Bedroom)</text>
+  <rect x="360.9489752240768" y="346.3182768275735" width="34.56935058689995" height="34.56935058689995" fill="#3498DB" class="room" />
+  <text x="378.23365051752677" y="358.6029521210235" class="room-label">Bedroom 3</text>
+  <text x="378.23365051752677" y="373.6029521210235" class="room-label" font-size="10">(Bedroom)</text>
+  <rect x="440.0876763978767" y="346.3182768275735" width="33.311859749944915" height="33.311859749944915" fill="#3498DB" class="room" />
+  <text x="456.74360627284915" y="357.974206702546" class="room-label">Bedroom 4</text>
+  <text x="456.74360627284915" y="372.974206702546" class="room-label" font-size="10">(Bedroom)</text>
+  <rect x="446.8366026385503" y="313.6011341176909" width="27.71714270988263" height="27.71714270988263" fill="#E67E22" class="room" />
+  <text x="460.6951739934916" y="322.4597054726322" class="room-label">Main Bathroom</text>
+  <text x="460.6951739934916" y="337.4597054726322" class="room-label" font-size="10">(Bathroom)</text>
+  <rect x="400.51832581097676" y="385.88762741447346" width="22.63095225570502" height="22.63095225570502" fill="#E67E22" class="room" />
+  <text x="411.83380193882925" y="392.20310354232595" class="room-label">Ensuite</text>
+  <text x="411.83380193882925" y="407.20310354232595" class="room-label" font-size="10">(Bathroom)</text>
+  <rect x="440.0876763978767" y="384.63013657751844" width="17.284675293449975" height="17.284675293449975" fill="#E67E22" class="room" />
+  <text x="448.73001404460166" y="388.2724742242434" class="room-label">Powder Room</text>
+  <text x="448.73001404460166" y="403.2724742242434" class="room-label" font-size="10">(Bathroom)</text>
+  <rect x="364.87587160117175" y="385.88762741447346" width="30.64245420980506" height="30.64245420980506" fill="#E74C3C" class="room" />
+  <text x="380.19709870607426" y="396.20885451937596" class="room-label">Home Office</text>
+  <text x="380.19709870607426" y="411.20885451937596" class="room-label" font-size="10">(Office)</text>
+  <rect x="400.51832581097676" y="413.5185796701785" width="70.65408693062278" height="70.65408693062278" fill="#34495E" class="room" />
+  <text x="435.8453692762881" y="443.84562313548986" class="room-label">Living/Dining</text>
+  <text x="435.8453692762881" y="458.84562313548986" class="room-label" font-size="10">(Living)</text>
+  <rect x="364.87587160117175" y="421.5300816242785" width="24.44422222121211" height="24.44422222121211" fill="#16A085" class="room" />
+  <text x="377.09798271177783" y="428.7521927348846" class="room-label">Laundry</text>
+  <text x="377.09798271177783" y="443.7521927348846" class="room-label" font-size="10">(Utility)</text>
+  <rect x="462.37235169132674" y="384.63013657751844" width="20.659138413786767" height="20.659138413786767" fill="#34495E" class="room" />
+  <text x="472.7019208982201" y="389.9597057844118" class="room-label">Mudroom</text>
+  <text x="472.7019208982201" y="404.9597057844118" class="room-label" font-size="10">(Entry)</text>
+  <rect x="327.8708719917357" y="384.5250820148425" width="32.00499960943602" height="32.00499960943602" fill="#8E44AD" class="room" />
+  <text x="343.87337179645374" y="395.5275818195605" class="room-label">Storage</text>
+  <text x="343.87337179645374" y="410.5275818195605" class="room-label" font-size="10">(Storage)</text>
+  <rect x="300.0" y="421.5300816242785" width="59.875871601171696" height="59.875871601171696" fill="#95A5A6" class="room" />
+  <text x="329.9379358005858" y="446.46801742486434" class="room-label">Garage</text>
+  <text x="329.9379358005858" y="461.46801742486434" class="room-label" font-size="10">(Garage)</text>
+</svg>

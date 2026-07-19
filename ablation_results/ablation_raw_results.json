@@ -1,0 +1,350 @@
+{
+  "simple_apartment": {
+    "scenario": "Simple 2-Bedroom Apartment",
+    "complexity": "Low",
+    "results": [
+      {
+        "config": "Full Framework (Baseline)",
+        "composite": 0.9044,
+        "functional": 0.9946,
+        "behavioral": 0.9925,
+        "structural": 1.0,
+        "layout": 0.8289,
+        "sustainability": 0.5,
+        "drop_pct": 0,
+        "time_s": 0.009
+      },
+      {
+        "config": "Without GoT Exploration",
+        "composite": 0.8755,
+        "functional": 0.9946,
+        "behavioral": 0.9925,
+        "structural": 1.0,
+        "layout": 0.7135,
+        "sustainability": 0.5,
+        "drop_pct": 3.19,
+        "time_s": 0.003
+      },
+      {
+        "config": "Without RAG (FAISS Retrieval)",
+        "composite": 0.8775,
+        "functional": 0.9946,
+        "behavioral": 0.9925,
+        "structural": 1.0,
+        "layout": 0.7215,
+        "sustainability": 0.5,
+        "drop_pct": 2.97,
+        "time_s": 0.005
+      },
+      {
+        "config": "Without Refinement Agent",
+        "composite": 0.803,
+        "functional": 0.5953,
+        "behavioral": 0.985,
+        "structural": 1.0,
+        "layout": 0.8289,
+        "sustainability": 0.5,
+        "drop_pct": 11.21,
+        "time_s": 0.003
+      },
+      {
+        "config": "Without FBS Reasoning",
+        "composite": 0.6001,
+        "functional": 0.1714,
+        "behavioral": 0.5,
+        "structural": 1.0,
+        "layout": 0.8289,
+        "sustainability": 0.5,
+        "drop_pct": 33.65,
+        "time_s": 0.001
+      },
+      {
+        "config": "Without Scoring Agent (MCDA)",
+        "composite": 0.656,
+        "functional": 0.5,
+        "behavioral": 0.5,
+        "structural": 1.0,
+        "layout": 0.78,
+        "sustainability": 0.5,
+        "drop_pct": 27.46,
+        "time_s": 0.002
+      },
+      {
+        "config": "Without Layout Agent",
+        "composite": 0.8466,
+        "functional": 0.9946,
+        "behavioral": 0.9925,
+        "structural": 1.0,
+        "layout": 0.5979,
+        "sustainability": 0.5,
+        "drop_pct": 6.39,
+        "time_s": 0.005
+      },
+      {
+        "config": "Without Aggregation",
+        "composite": 0.8915,
+        "functional": 0.9936,
+        "behavioral": 0.991,
+        "structural": 1.0,
+        "layout": 0.7795,
+        "sustainability": 0.5,
+        "drop_pct": 1.43,
+        "time_s": 0.003
+      },
+      {
+        "config": "Without Pruning",
+        "composite": 0.8889,
+        "functional": 0.9946,
+        "behavioral": 0.9925,
+        "structural": 1.0,
+        "layout": 0.7671,
+        "sustainability": 0.5,
+        "drop_pct": 1.71,
+        "time_s": 0.004
+      },
+      {
+        "config": "Without Adaptive Complexity",
+        "composite": 0.896,
+        "functional": 0.9946,
+        "behavioral": 0.9925,
+        "structural": 1.0,
+        "layout": 0.7952,
+        "sustainability": 0.5,
+        "drop_pct": 0.93,
+        "time_s": 0.003
+      }
+    ]
+  },
+  "family_home": {
+    "scenario": "4-Bedroom Family Home",
+    "complexity": "High",
+    "results": [
+      {
+        "config": "Full Framework (Baseline)",
+        "composite": 0.8752,
+        "functional": 0.9295,
+        "behavioral": 0.9282,
+        "structural": 1.0,
+        "layout": 0.8289,
+        "sustainability": 0.5,
+        "drop_pct": 0,
+        "time_s": 0.007
+      },
+      {
+        "config": "Without GoT Exploration",
+        "composite": 0.8482,
+        "functional": 0.9327,
+        "behavioral": 0.933,
+        "structural": 1.0,
+        "layout": 0.7135,
+        "sustainability": 0.5,
+        "drop_pct": 3.09,
+        "time_s": 0.005
+      },
+      {
+        "config": "Without RAG (FAISS Retrieval)",
+        "composite": 0.8482,
+        "functional": 0.9315,
+        "behavioral": 0.9313,
+        "structural": 1.0,
+        "layout": 0.7163,
+        "sustainability": 0.5,
+        "drop_pct": 3.09,
+        "time_s": 0.005
+      },
+      {
+        "config": "Without Refinement Agent",
+        "composite": 0.7183,
+        "functional": 0.4139,
+        "behavioral": 0.7879,
+        "structural": 1.0,
+        "layout": 0.8289,
+        "sustainability": 0.5,
+        "drop_pct": 17.93,
+        "time_s": 0.003
+      },
+      {
+        "config": "Without FBS Reasoning",
+        "composite": 0.6136,
+        "functional": 0.2257,
+        "behavioral": 0.5,
+        "structural": 1.0,
+        "layout": 0.8289,
+        "sustainability": 0.5,
+        "drop_pct": 29.89,
+        "time_s": 0.002
+      },
+      {
+        "config": "Without Scoring Agent (MCDA)",
+        "composite": 0.556,
+        "functional": 0.25,
+        "behavioral": 0.25,
+        "structural": 1.0,
+        "layout": 0.78,
+        "sustainability": 0.5,
+        "drop_pct": 36.47,
+        "time_s": 0.002
+      },
+      {
+        "config": "Without Layout Agent",
+        "composite": 0.8175,
+        "functional": 0.9295,
+        "behavioral": 0.9282,
+        "structural": 1.0,
+        "layout": 0.5979,
+        "sustainability": 0.5,
+        "drop_pct": 6.6,
+        "time_s": 0.004
+      },
+      {
+        "config": "Without Aggregation",
+        "composite": 0.8552,
+        "functional": 0.9348,
+        "behavioral": 0.9378,
+        "structural": 1.0,
+        "layout": 0.7356,
+        "sustainability": 0.5,
+        "drop_pct": 2.29,
+        "time_s": 0.004
+      },
+      {
+        "config": "Without Pruning",
+        "composite": 0.8598,
+        "functional": 0.9295,
+        "behavioral": 0.9282,
+        "structural": 1.0,
+        "layout": 0.7671,
+        "sustainability": 0.5,
+        "drop_pct": 1.76,
+        "time_s": 0.005
+      },
+      {
+        "config": "Without Adaptive Complexity",
+        "composite": 0.8668,
+        "functional": 0.9295,
+        "behavioral": 0.9282,
+        "structural": 1.0,
+        "layout": 0.7952,
+        "sustainability": 0.5,
+        "drop_pct": 0.96,
+        "time_s": 0.004
+      }
+    ]
+  },
+  "townhouse": {
+    "scenario": "3-Bedroom Townhouse",
+    "complexity": "Medium",
+    "results": [
+      {
+        "config": "Full Framework (Baseline)",
+        "composite": 0.8881,
+        "functional": 0.9564,
+        "behavioral": 0.959,
+        "structural": 1.0,
+        "layout": 0.8289,
+        "sustainability": 0.5,
+        "drop_pct": 0,
+        "time_s": 0.003
+      },
+      {
+        "config": "Without GoT Exploration",
+        "composite": 0.8631,
+        "functional": 0.9647,
+        "behavioral": 0.9679,
+        "structural": 1.0,
+        "layout": 0.7135,
+        "sustainability": 0.5,
+        "drop_pct": 2.81,
+        "time_s": 0.003
+      },
+      {
+        "config": "Without RAG (FAISS Retrieval)",
+        "composite": 0.8627,
+        "functional": 0.96,
+        "behavioral": 0.9629,
+        "structural": 1.0,
+        "layout": 0.7205,
+        "sustainability": 0.5,
+        "drop_pct": 2.86,
+        "time_s": 0.004
+      },
+      {
+        "config": "Without Refinement Agent",
+        "composite": 0.7901,
+        "functional": 0.6035,
+        "behavioral": 0.9101,
+        "structural": 1.0,
+        "layout": 0.8289,
+        "sustainability": 0.5,
+        "drop_pct": 11.04,
+        "time_s": 0.002
+      },
+      {
+        "config": "Without FBS Reasoning",
+        "composite": 0.5955,
+        "functional": 0.1531,
+        "behavioral": 0.5,
+        "structural": 1.0,
+        "layout": 0.8289,
+        "sustainability": 0.5,
+        "drop_pct": 32.95,
+        "time_s": 0.002
+      },
+      {
+        "config": "Without Scoring Agent (MCDA)",
+        "composite": 0.6338,
+        "functional": 0.4444,
+        "behavioral": 0.4444,
+        "structural": 1.0,
+        "layout": 0.78,
+        "sustainability": 0.5,
+        "drop_pct": 28.64,
+        "time_s": 0.001
+      },
+      {
+        "config": "Without Layout Agent",
+        "composite": 0.8304,
+        "functional": 0.9564,
+        "behavioral": 0.959,
+        "structural": 1.0,
+        "layout": 0.5979,
+        "sustainability": 0.5,
+        "drop_pct": 6.5,
+        "time_s": 0.004
+      },
+      {
+        "config": "Without Aggregation",
+        "composite": 0.8788,
+        "functional": 0.9581,
+        "behavioral": 0.9598,
+        "structural": 1.0,
+        "layout": 0.7894,
+        "sustainability": 0.5,
+        "drop_pct": 1.05,
+        "time_s": 0.003
+      },
+      {
+        "config": "Without Pruning",
+        "composite": 0.8727,
+        "functional": 0.9564,
+        "behavioral": 0.959,
+        "structural": 1.0,
+        "layout": 0.7671,
+        "sustainability": 0.5,
+        "drop_pct": 1.74,
+        "time_s": 0.005
+      },
+      {
+        "config": "Without Adaptive Complexity",
+        "composite": 0.8797,
+        "functional": 0.9564,
+        "behavioral": 0.959,
+        "structural": 1.0,
+        "layout": 0.7952,
+        "sustainability": 0.5,
+        "drop_pct": 0.95,
+        "time_s": 0.003
+      }
+    ]
+  }
+}

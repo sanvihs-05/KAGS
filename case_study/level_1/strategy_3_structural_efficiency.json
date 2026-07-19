@@ -1,0 +1,400 @@
+{
+    "node_id": "strat_struct_eff_003",
+    "node_type": "design_prototype",
+    "generation_level": 1,
+    "parent_node_id": "problem_node_001",
+    "transformation_type": "structural_variation",
+    "strategy_name": "Structural Efficiency",
+    "reasoning": "Focus on efficient structural systems, reduce footprint by 7%",
+    "functions": {
+        "F001": {
+            "name": "provide_master_bedroom",
+            "category": "spatial",
+            "priority": 0.95,
+            "activities": [
+                "sleeping",
+                "resting",
+                "privacy"
+            ],
+            "spatial_requirements": {
+                "min_area": 16.74,
+                "preferred_area": 18.6,
+                "max_area": 20.46
+            }
+        },
+        "F002": {
+            "name": "provide_bedroom_2",
+            "category": "spatial",
+            "priority": 0.85,
+            "activities": [
+                "sleeping",
+                "studying"
+            ],
+            "spatial_requirements": {
+                "min_area": 12.09,
+                "preferred_area": 13.02,
+                "max_area": 13.95
+            }
+        },
+        "F003": {
+            "name": "provide_bedroom_3",
+            "category": "spatial",
+            "priority": 0.82,
+            "activities": [
+                "sleeping",
+                "studying"
+            ],
+            "spatial_requirements": {
+                "min_area": 11.16,
+                "preferred_area": 12.09,
+                "max_area": 13.95
+            }
+        },
+        "F004": {
+            "name": "provide_bedroom_4",
+            "category": "spatial",
+            "priority": 0.80,
+            "activities": [
+                "sleeping",
+                "studying"
+            ],
+            "spatial_requirements": {
+                "min_area": 11.16,
+                "preferred_area": 12.09,
+                "max_area": 13.95
+            }
+        },
+        "F005": {
+            "name": "provide_living_dining",
+            "category": "social",
+            "priority": 0.95,
+            "activities": [
+                "socializing",
+                "dining",
+                "entertainment"
+            ],
+            "spatial_requirements": {
+                "min_area": 32.55,
+                "preferred_area": 37.2,
+                "max_area": 41.85
+            }
+        },
+        "F006": {
+            "name": "provide_kitchen",
+            "category": "technical",
+            "priority": 0.90,
+            "activities": [
+                "cooking",
+                "food_prep"
+            ],
+            "spatial_requirements": {
+                "min_area": 13.02,
+                "preferred_area": 14.88,
+                "max_area": 16.74
+            }
+        },
+        "F007": {
+            "name": "provide_home_office",
+            "category": "spatial",
+            "priority": 0.75,
+            "activities": [
+                "work",
+                "concentration"
+            ],
+            "spatial_requirements": {
+                "min_area": 9.3,
+                "preferred_area": 11.16,
+                "max_area": 13.02
+            }
+        },
+        "F008": {
+            "name": "provide_master_bathroom",
+            "category": "technical",
+            "priority": 0.85,
+            "activities": [
+                "bathing",
+                "hygiene"
+            ],
+            "spatial_requirements": {
+                "min_area": 5.58,
+                "preferred_area": 7.44,
+                "max_area": 9.3
+            }
+        },
+        "F009": {
+            "name": "provide_bathroom_2",
+            "category": "technical",
+            "priority": 0.70,
+            "activities": [
+                "bathing",
+                "hygiene"
+            ],
+            "spatial_requirements": {
+                "min_area": 3.72,
+                "preferred_area": 5.58,
+                "max_area": 6.51
+            }
+        },
+        "F010": {
+            "name": "provide_bathroom_3",
+            "category": "technical",
+            "priority": 0.70,
+            "activities": [
+                "bathing",
+                "hygiene"
+            ],
+            "spatial_requirements": {
+                "min_area": 3.72,
+                "preferred_area": 5.58,
+                "max_area": 6.51
+            }
+        },
+        "F011": {
+            "name": "provide_laundry",
+            "category": "technical",
+            "priority": 0.60,
+            "activities": [
+                "laundry",
+                "cleaning"
+            ],
+            "spatial_requirements": {
+                "min_area": 3.72,
+                "preferred_area": 5.58,
+                "max_area": 7.44
+            }
+        },
+        "F012": {
+            "name": "provide_mudroom",
+            "category": "spatial",
+            "priority": 0.65,
+            "activities": [
+                "transition",
+                "storage"
+            ],
+            "spatial_requirements": {
+                "min_area": 3.72,
+                "preferred_area": 4.65,
+                "max_area": 5.58
+            }
+        },
+        "F013": {
+            "name": "provide_garage",
+            "category": "technical",
+            "priority": 0.60,
+            "activities": [
+                "parking",
+                "storage"
+            ],
+            "spatial_requirements": {
+                "min_area": 27.9,
+                "preferred_area": 32.55,
+                "max_area": 37.2
+            }
+        },
+        "F014": {
+            "name": "provide_storage",
+            "category": "spatial",
+            "priority": 0.50,
+            "activities": [
+                "storage"
+            ],
+            "spatial_requirements": {
+                "min_area": 3.72,
+                "preferred_area": 5.58,
+                "max_area": 7.44
+            }
+        }
+    },
+    "behaviors": {
+        "B001": {
+            "behavior_type": "expected",
+            "category": "thermal",
+            "metric_name": "thermal_transmittance",
+            "target_value": 0.25,
+            "actual_value": null,
+            "tolerance": 0.15,
+            "unit": "W/m²K"
+        },
+        "B002": {
+            "behavior_type": "expected",
+            "category": "acoustic",
+            "metric_name": "sound_transmission_class",
+            "target_value": 50,
+            "actual_value": null,
+            "tolerance": 0.10,
+            "unit": "STC"
+        },
+        "B003": {
+            "behavior_type": "expected",
+            "category": "lighting",
+            "metric_name": "daylight_factor",
+            "target_value": 3.0,
+            "actual_value": null,
+            "tolerance": 0.33,
+            "unit": "%"
+        },
+        "B004": {
+            "behavior_type": "expected",
+            "category": "ventilation",
+            "metric_name": "air_changes_per_hour",
+            "target_value": 5.0,
+            "actual_value": null,
+            "tolerance": 0.40,
+            "unit": "ACH"
+        },
+        "B005": {
+            "behavior_type": "expected",
+            "category": "energy",
+            "metric_name": "energy_efficiency",
+            "target_value": 0.95,
+            "actual_value": null,
+            "tolerance": 0.05,
+            "unit": "ratio"
+        }
+    },
+    "structures": {
+        "S001": {
+            "name": "external_wall",
+            "structure_type": "wall",
+            "category": "envelope",
+            "material_type": "lightweight_steel_frame",
+            "thermal_properties": {
+                "U_value": 0.22
+            },
+            "load_bearing": true
+        },
+        "S002": {
+            "name": "bedroom_partition",
+            "structure_type": "partition",
+            "category": "partition",
+            "material_type": "lightweight_steel",
+            "acoustic_rating": "STC-48",
+            "load_bearing": false
+        },
+        "S003": {
+            "name": "floor_slab",
+            "structure_type": "slab",
+            "category": "structural",
+            "material_type": "composite_deck",
+            "dimensions": {
+                "thickness": 0.15
+            },
+            "load_bearing": true
+        },
+        "S004": {
+            "name": "roof_assembly",
+            "structure_type": "roof",
+            "category": "envelope",
+            "material_type": "steel_truss",
+            "thermal_properties": {
+                "U_value": 0.20
+            }
+        },
+        "S005": {
+            "name": "glazing_system",
+            "structure_type": "wall",
+            "category": "envelope",
+            "material_type": "double_glazing",
+            "thermal_properties": {
+                "U_value": 1.1
+            }
+        }
+    },
+    "layout": {
+        "total_area": 232.5,
+        "rooms": {
+            "R001": {
+                "name": "Master Bedroom",
+                "room_type": "bedroom",
+                "area": 18.6,
+                "height": 3.0
+            },
+            "R002": {
+                "name": "Bedroom 2",
+                "room_type": "bedroom",
+                "area": 13.02,
+                "height": 3.0
+            },
+            "R003": {
+                "name": "Bedroom 3",
+                "room_type": "bedroom",
+                "area": 12.09,
+                "height": 3.0
+            },
+            "R004": {
+                "name": "Bedroom 4",
+                "room_type": "bedroom",
+                "area": 12.09,
+                "height": 3.0
+            },
+            "R005": {
+                "name": "Living/Dining",
+                "room_type": "living",
+                "area": 37.2,
+                "height": 3.0
+            },
+            "R006": {
+                "name": "Kitchen",
+                "room_type": "kitchen",
+                "area": 14.88,
+                "height": 3.0
+            },
+            "R007": {
+                "name": "Home Office",
+                "room_type": "study",
+                "area": 11.16,
+                "height": 3.0
+            },
+            "R008": {
+                "name": "Master Bathroom",
+                "room_type": "bathroom",
+                "area": 7.44,
+                "height": 3.0
+            },
+            "R009": {
+                "name": "Bathroom 2",
+                "room_type": "bathroom",
+                "area": 5.58,
+                "height": 3.0
+            },
+            "R010": {
+                "name": "Bathroom 3",
+                "room_type": "bathroom",
+                "area": 5.58,
+                "height": 3.0
+            },
+            "R011": {
+                "name": "Laundry",
+                "room_type": "utility",
+                "area": 5.58,
+                "height": 3.0
+            },
+            "R012": {
+                "name": "Mudroom",
+                "room_type": "hallway",
+                "area": 4.65,
+                "height": 3.0
+            },
+            "R013": {
+                "name": "Garage",
+                "room_type": "garage",
+                "area": 32.55,
+                "height": 3.0
+            },
+            "R014": {
+                "name": "Storage",
+                "room_type": "storage",
+                "area": 5.58,
+                "height": 3.0
+            }
+        }
+    },
+    "scores": {
+        "functional_score": 0.83,
+        "behavioral_score": 0.85,
+        "structural_score": 0.90,
+        "layout_score": 0.82,
+        "sustainability_score": 0.85,
+        "composite_score": 0.850
+    }
+}

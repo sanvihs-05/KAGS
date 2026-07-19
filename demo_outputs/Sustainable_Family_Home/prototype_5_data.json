@@ -1,0 +1,24 @@
+{
+  "prototype_number": 5,
+  "prototype_name": "Flexible Adaptable Design",
+  "design_strategy": "Create adaptable spaces that can evolve with changing family needs over time",
+  "total_area": 208.0,
+  "room_count": 14,
+  "scores": {
+    "functional": 0.9,
+    "behavioral": 0.88,
+    "structural": 0.84,
+    "layout": 0.87,
+    "sustainability": 0.81,
+    "composite": 0.879
+  },
+  "key_features": [
+    "Convertible office/guest bedroom",
+    "Flexible kids rooms with movable partitions",
+    "Universal design principles",
+    "Pre-wired for future additions",
+    "Accessible bathroom layouts"
+  ],
+  "svg_path": "demo_outputs\\Sustainable_Family_Home\\visualizations\\Flexible_Adaptable_Design_DP05_layout_20251129_122529.svg",
+  "adjacency_path": "demo_outputs\\Sustainable_Family_Home\\visualizations\\Flexible_Adaptable_Design_DP05_adjacency_20251129_122529.png"
+}

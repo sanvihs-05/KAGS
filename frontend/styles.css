@@ -1,0 +1,23 @@
+:root{--bg:#0f1724;--card:#111827;--muted:#94a3b8;--accent:#60a5fa}
+*{box-sizing:border-box;font-family:Inter,Segoe UI,Roboto,Arial,Helvetica,sans-serif}
+body{margin:0;background:linear-gradient(180deg,#071029 0%,#081229 100%);color:#e6eef8}
+.container{max-width:1100px;margin:28px auto;padding:24px}
+h1{margin:0 0 12px;font-size:20px}
+form{background:rgba(255,255,255,0.03);padding:16px;border-radius:8px;margin-bottom:16px}
+label{display:block;margin-bottom:10px}
+input[type=text],textarea,select,input[type=number]{width:100%;padding:8px;border-radius:6px;border:1px solid rgba(255,255,255,0.06);background:rgba(255,255,255,0.02);color:inherit}
+.row{display:flex;gap:12px}
+.row label{flex:1}
+.actions{margin-top:8px}
+button{background:var(--accent);border:none;padding:10px 14px;border-radius:8px;color:#04263b;font-weight:700;cursor:pointer}
+.status{margin:8px 0;padding:8px;color:var(--muted)}
+.status.error{color:#ffb4b4}
+.results{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:14px}
+.card{background:rgba(255,255,255,0.02);padding:12px;border-radius:8px;border:1px solid rgba(255,255,255,0.03)}
+.card header h3{margin:0 0 6px}
+.scores{display:flex;gap:6px;flex-wrap:wrap;list-style:none;padding:0;margin:6px 0}
+.scores li{background:rgba(255,255,255,0.03);padding:6px;border-radius:6px;font-size:13px}
+.svg-wrap{background:#fff;border-radius:6px;padding:6px;margin-top:8px}
+.svg-wrap svg{width:100%;height:auto}
+pre{background:#061223;color:#bcd8ff;padding:8px;border-radius:6px;overflow:auto}
+footer{margin-top:18px;color:var(--muted);font-size:13px}

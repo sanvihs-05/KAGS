@@ -1,0 +1,330 @@
+{
+    "prototype_id": "compact_linear_001",
+    "prototype_name": "Compact Linear Layout",
+    "composite_score": 0.82,
+    "generation_method": "Spatial compactness with linear arrangement",
+    "scores": {
+        "functional_adequacy": 0.80,
+        "behavioral_performance": 0.78,
+        "structural_feasibility": 0.82,
+        "layout_efficiency": 0.92,
+        "sustainability": 0.80
+    },
+    "functions": [
+        {
+            "id": "F001",
+            "name": "Living Room",
+            "priority": 0.88,
+            "activities": [
+                "relaxation",
+                "entertainment",
+                "socializing"
+            ],
+            "area_required": 22.0,
+            "zone": "social"
+        },
+        {
+            "id": "F002",
+            "name": "Kitchen",
+            "priority": 0.85,
+            "activities": [
+                "cooking",
+                "food_preparation",
+                "storage"
+            ],
+            "area_required": 13.0,
+            "zone": "service"
+        },
+        {
+            "id": "F003",
+            "name": "Dining Room",
+            "priority": 0.72,
+            "activities": [
+                "eating",
+                "gathering"
+            ],
+            "area_required": 10.0,
+            "zone": "social"
+        },
+        {
+            "id": "F004",
+            "name": "Master Bedroom",
+            "priority": 0.85,
+            "activities": [
+                "sleeping",
+                "resting",
+                "privacy"
+            ],
+            "area_required": 16.0,
+            "zone": "private"
+        },
+        {
+            "id": "F005",
+            "name": "Bedroom 2",
+            "priority": 0.70,
+            "activities": [
+                "sleeping",
+                "studying"
+            ],
+            "area_required": 12.0,
+            "zone": "private"
+        },
+        {
+            "id": "F006",
+            "name": "Bedroom 3",
+            "priority": 0.65,
+            "activities": [
+                "sleeping",
+                "playing"
+            ],
+            "area_required": 10.0,
+            "zone": "private"
+        },
+        {
+            "id": "F007",
+            "name": "Bathroom",
+            "priority": 0.78,
+            "activities": [
+                "bathing",
+                "hygiene"
+            ],
+            "area_required": 7.0,
+            "zone": "service"
+        },
+        {
+            "id": "F008",
+            "name": "Toilet",
+            "priority": 0.58,
+            "activities": [
+                "hygiene"
+            ],
+            "area_required": 3.0,
+            "zone": "service"
+        }
+    ],
+    "behaviors": {
+        "thermal": {
+            "expected": {
+                "target": 21.0,
+                "unit": "°C",
+                "tolerance": 0.15
+            },
+            "actual": {
+                "value": 19.8,
+                "satisfaction": 0.88
+            }
+        },
+        "acoustic": {
+            "expected": {
+                "target": 35.0,
+                "unit": "dB",
+                "tolerance": 0.18
+            },
+            "actual": {
+                "value": 37.0,
+                "satisfaction": 0.85
+            }
+        },
+        "lighting": {
+            "expected": {
+                "target": 300.0,
+                "unit": "lux",
+                "tolerance": 0.12
+            },
+            "actual": {
+                "value": 275.0,
+                "satisfaction": 0.88
+            }
+        },
+        "ventilation": {
+            "expected": {
+                "target": 0.5,
+                "unit": "ACH",
+                "tolerance": 0.20
+            },
+            "actual": {
+                "value": 0.45,
+                "satisfaction": 0.90
+            }
+        }
+    },
+    "structures": [
+        {
+            "id": "S001",
+            "type": "external_wall",
+            "material": "standard_concrete",
+            "u_value": 0.28,
+            "stc_rating": 48,
+            "thickness": 0.25
+        },
+        {
+            "id": "S002",
+            "type": "internal_wall",
+            "material": "lightweight_partition",
+            "u_value": 0.55,
+            "stc_rating": 38,
+            "thickness": 0.10
+        },
+        {
+            "id": "S003",
+            "type": "window",
+            "material": "double_glazed",
+            "u_value": 1.6,
+            "stc_rating": 30,
+            "area_ratio": 0.20
+        },
+        {
+            "id": "S004",
+            "type": "floor",
+            "material": "concrete_slab",
+            "u_value": 0.28,
+            "stc_rating": 45,
+            "thickness": 0.18
+        },
+        {
+            "id": "S005",
+            "type": "roof",
+            "material": "standard_roof",
+            "u_value": 0.22,
+            "stc_rating": 40,
+            "thickness": 0.30
+        }
+    ],
+    "layout": {
+        "total_area": 93.0,
+        "bounding_box": {
+            "width": 18.0,
+            "height": 6.0
+        },
+        "compactness": 0.86,
+        "circulation_efficiency": 0.94,
+        "adjacency_satisfaction": 0.90,
+        "rooms": [
+            {
+                "id": "R001",
+                "function": "Living Room",
+                "x": 0.0,
+                "y": 0.0,
+                "width": 5.5,
+                "height": 4.0,
+                "area": 22.0
+            },
+            {
+                "id": "R002",
+                "function": "Kitchen",
+                "x": 5.5,
+                "y": 0.0,
+                "width": 3.25,
+                "height": 4.0,
+                "area": 13.0
+            },
+            {
+                "id": "R003",
+                "function": "Dining Room",
+                "x": 8.75,
+                "y": 0.0,
+                "width": 2.5,
+                "height": 4.0,
+                "area": 10.0
+            },
+            {
+                "id": "R004",
+                "function": "Master Bedroom",
+                "x": 0.0,
+                "y": 4.0,
+                "width": 4.0,
+                "height": 4.0,
+                "area": 16.0
+            },
+            {
+                "id": "R005",
+                "function": "Bedroom 2",
+                "x": 4.0,
+                "y": 4.0,
+                "width": 3.0,
+                "height": 4.0,
+                "area": 12.0
+            },
+            {
+                "id": "R006",
+                "function": "Bedroom 3",
+                "x": 7.0,
+                "y": 4.0,
+                "width": 2.5,
+                "height": 4.0,
+                "area": 10.0
+            },
+            {
+                "id": "R007",
+                "function": "Bathroom",
+                "x": 9.5,
+                "y": 4.0,
+                "width": 2.0,
+                "height": 3.5,
+                "area": 7.0
+            },
+            {
+                "id": "R008",
+                "function": "Toilet",
+                "x": 11.25,
+                "y": 0.0,
+                "width": 1.5,
+                "height": 2.0,
+                "area": 3.0
+            }
+        ],
+        "circulation_paths": [
+            {
+                "from": "Entry",
+                "to": "Living Room",
+                "distance": 1.0
+            },
+            {
+                "from": "Living Room",
+                "to": "Kitchen",
+                "distance": 1.5
+            },
+            {
+                "from": "Kitchen",
+                "to": "Dining Room",
+                "distance": 1.2
+            },
+            {
+                "from": "Living Room",
+                "to": "Master Bedroom",
+                "distance": 2.5
+            },
+            {
+                "from": "Master Bedroom",
+                "to": "Bathroom",
+                "distance": 4.0
+            },
+            {
+                "from": "Bedroom 2",
+                "to": "Bathroom",
+                "distance": 3.2
+            }
+        ],
+        "adjacency_matrix": {
+            "Living-Kitchen": 0.92,
+            "Kitchen-Dining": 0.95,
+            "Living-Dining": 0.70,
+            "Bedrooms-Bathroom": 0.75,
+            "Bedrooms-Kitchen": -0.4
+        }
+    },
+    "refinement_history": [
+        {
+            "iteration": 1,
+            "action": "Optimized room sequence",
+            "score_before": 0.75,
+            "score_after": 0.79
+        },
+        {
+            "iteration": 2,
+            "action": "Adjusted corridor width",
+            "score_before": 0.79,
+            "score_after": 0.82
+        }
+    ]
+}

@@ -1,18 +1,28 @@
-# Ignore virtual environment
+# Virtual environments
 venv/
+.venv/
+env/
 .env/
 
-# Ignore Python cache
+# Python cache
 __pycache__/
 *.pyc
 *.pyo
 
-# Ignore large embedding files (optional)
+# Node
+node_modules/
+
+# Large embedding / vector-store / index artifacts (regenerable)
 *.npy
 *.pkl
 *.bin
-*.json
+*.index
+enhanced_multimodal_rag_store/
+data/faiss_index/
 
-# Ignore OS files
+# Corrupted / scratch
+*.corrupted
+
+# OS files
 .DS_Store
 Thumbs.db
