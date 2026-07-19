@@ -634,77 +634,104 @@ Extract all spatial information and return as JSON."""
         }
         return activities.get(room_type, ['general_use'])
     
+    # Word → number for counts like "three bedrooms" (the old regex only read digits)
+    _WORD_NUM = {
+        'a': 1, 'an': 1, 'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
+        'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10,
+        'single': 1, 'double': 2, 'triple': 3,
+    }
+
+    @staticmethod
+    def _area_after(text: str, pos: int) -> Optional[tuple]:
+        """Find an explicit area spec just after a room mention, e.g. '(40 sqm)',
+        '14 sqm each', '35-45 sqm'. Returns (area_min, area_max) or None."""
+        window = text[pos:pos + 16]  # tight: only an area immediately adjacent to the room
+        unit = r'(?:sqm|sq\s*m|m2|m²|square\s*met(?:er|re)s?)'
+        m = re.search(r'(\d+(?:\.\d+)?)\s*(?:-|to|–)\s*(\d+(?:\.\d+)?)\s*' + unit, window)
+        if m:
+            return float(m.group(1)), float(m.group(2))
+        m = re.search(r'(\d+(?:\.\d+)?)\s*' + unit, window)
+        if m:
+            a = float(m.group(1))
+            return round(a * 0.85, 1), round(a * 1.15, 1)
+        return None
+
     def _fallback_parse(self, user_input: str) -> Dict[str, Any]:
         """
-        Fallback regex-based parsing when LLM fails
-        
-        ✅ IMPROVED: Better room detection
+        Deterministic fallback parser used when the LLM is unavailable or times
+        out. Rewritten to fix the degenerate-program bug: the old version only
+        matched DIGIT-prefixed rooms (missing "three bedrooms", "master
+        bedroom", "ensuite bathroom") and ignored explicit areas.
+
+        Now handles word-numbers, qualified singletons, and per-room areas.
         """
-        parsed = {
-            'rooms': [],
-            'adjacencies': [],
-            'constraints': [],
-            'priorities': []
-        }
-        
-        user_lower = user_input.lower()
-        
-        # Extract room counts with numbers
-        room_patterns = [
-            (r'(\d+)\s*bedroom', 'bedroom'),
-            (r'(\d+)\s*bathroom', 'bathroom'),
-            (r'(\d+)\s*bed\s*room', 'bedroom'),
-            (r'(\d+)\s*bath', 'bathroom'),
+        parsed = {'rooms': [], 'adjacencies': [], 'constraints': [], 'priorities': []}
+        text = ' ' + user_input.lower() + ' '
+        num_alt = '|'.join(self._WORD_NUM.keys())
+        qual = r'(?:master|guest|shared|ensuite|en-suite|main|primary|family|kids?|children\'?s?|junior|powder)'
+
+        # (synonym regex, canonical type, (default_min, default_max), countable?)
+        LEXICON = [
+            (r'bedrooms?', 'bedroom', (12.0, 16.0), True),
+            (r'bathrooms?', 'bathroom', (4.0, 8.0), True),
+            (r'powder\s*rooms?|toilets?|\bwc\b|water\s*closets?', 'toilet', (2.0, 4.0), True),
+            (r'kitchens?', 'kitchen', (14.0, 18.0), False),
+            (r'living(?:\s*/?\s*dining)?(?:\s*(?:rooms?|areas?))?|great\s*rooms?|lounges?',
+             'living_room', (30.0, 45.0), False),
+            (r'dining(?:\s*(?:rooms?|areas?))?', 'dining', (10.0, 16.0), False),
+            (r'home\s*offices?|offices?|stud(?:y|ies)|studios?', 'office', (10.0, 14.0), False),
+            (r'laundr(?:y|ies)|utility(?:\s*rooms?)?', 'laundry', (4.0, 10.0), False),
+            (r'mud\s*rooms?', 'mudroom', (4.0, 8.0), False),
+            (r'garages?', 'garage', (18.0, 40.0), False),
+            (r'store\s*rooms?|storages?|pantr(?:y|ies)|closets?', 'storage', (4.0, 12.0), False),
         ]
-        
-        for pattern, room_type in room_patterns:
-            matches = re.findall(pattern, user_lower)
-            for match in matches:
-                count = int(match) if match.isdigit() else 1
-                for _ in range(count):
-                    parsed['rooms'].append({
-                        'type': room_type,
-                        'name': f"{room_type.replace('_', ' ').title()}",
-                        'area_min': 10.0,
-                        'area_max': 15.0,
-                        'area_preferred': 12.0,
-                        'requirements': [],
-                        'orientation': 'any'
-                    })
-        
-        # Extract single rooms
-        single_patterns = [
-            'kitchen', 'living_room', 'living', 'dining', 
-            'study', 'office', 'utility', 'storage', 'balcony'
-        ]
-        
-        for pattern in single_patterns:
-            if pattern in user_lower:
-                room_type = pattern.replace(' ', '_')
-                if not any(r['type'] == room_type for r in parsed['rooms']):
-                    parsed['rooms'].append({
-                        'type': room_type,
-                        'name': room_type.replace('_', ' ').title(),
-                        'area_min': 8.0,
-                        'area_max': 12.0,
-                        'area_preferred': 10.0,
-                        'requirements': [],
-                        'orientation': 'any'
-                    })
-        
+
+        def add_room(rtype, area):
+            lo, hi = area
+            parsed['rooms'].append({
+                'type': rtype,
+                'name': rtype.replace('_', ' ').title(),
+                'area_min': lo, 'area_max': hi, 'area_preferred': round((lo + hi) / 2, 1),
+                'requirements': [], 'orientation': 'any',
+            })
+
+        for syn, rtype, default_area, countable in LEXICON:
+            if countable:
+                # A "N-bedroom" / "N bedroom home" headline is authoritative — humans
+                # read "4-bedroom home with master bedroom and three bedrooms" as 4,
+                # not 8. Use the headline count if present; else sum enumerated mentions.
+                head = re.search(r'\b(\d+|' + num_alt + r')[\s-]+(?:' + syn + r')', text)
+                if head:
+                    qtok = head.group(1)
+                    total = int(qtok) if qtok.isdigit() else self._WORD_NUM.get(qtok, 1)
+                    area = self._area_after(text, head.end()) or default_area
+                else:
+                    rx = re.compile(
+                        r'(?:\b(?P<qty>\d+|' + num_alt + r')\s+)?'
+                        r'(?:' + qual + r'\s+)?(?:' + syn + r')')
+                    total, area = 0, None
+                    for m in rx.finditer(text):
+                        qtok = m.group('qty')
+                        total += int(qtok) if (qtok and qtok.isdigit()) else self._WORD_NUM.get(qtok, 1)
+                        if area is None:
+                            area = self._area_after(text, m.end())
+                    area = area or default_area
+                for _ in range(min(total, 12)):   # cap runaway matches
+                    add_room(rtype, area)
+            else:
+                m = re.search(r'(?:' + syn + r')', text)
+                if m:
+                    add_room(rtype, self._area_after(text, m.end()) or default_area)
+
         # Ensure at least one room
         if not parsed['rooms']:
-            logger.warning("Fallback parser found no rooms - adding default")
-            parsed['rooms'] = [{
-                'type': 'living_room',
-                'name': 'Living Room',
-                'area_min': 15.0,
-                'area_max': 25.0,
-                'area_preferred': 20.0,
-                'requirements': [],
-                'orientation': 'any'
-            }]
-        
+            logger.warning("Fallback parser found no rooms - adding default living room")
+            add_room('living_room', (15.0, 25.0))
+
+        logger.info(
+            f"  ✓ Fallback parser extracted {len(parsed['rooms'])} rooms: "
+            f"{[r['type'] for r in parsed['rooms']]}"
+        )
         return parsed
     
     def _add_constraints(self, node: FBSLLayoutNode, context: Dict[str, Any]):
