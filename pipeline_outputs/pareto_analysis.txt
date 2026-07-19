@@ -1,0 +1,30 @@
+================================================================================
+PARETO FRONTIER TRADE-OFF ANALYSIS
+================================================================================
+
+Solution 1: 29e5c1da
+  Composite Score: 0.892
+  ✓ Champions: behavioral, structural, sustainability
+  ⚖ Trade-offs:
+    - functional: -0.050
+    - layout: -0.050
+
+Solution 2: ffc953e0
+  Composite Score: 0.885
+  ✓ Champions: functional
+  ⚖ Trade-offs:
+    - sustainability: -0.150
+    - structural: -0.040
+    - layout: -0.040
+    - behavioral: -0.030
+
+Solution 3: 1dbb0b81
+  Composite Score: 0.876
+  ✓ Champions: layout
+  ⚖ Trade-offs:
+    - sustainability: -0.130
+    - functional: -0.040
+    - behavioral: -0.040
+    - structural: -0.030
+
+================================================================================

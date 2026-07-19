@@ -1,0 +1,352 @@
+{
+    "prototype_id": "perf_thermal_001",
+    "prototype_name": "Performance Optimized - Thermal Focus",
+    "composite_score": 0.86,
+    "generation_method": "Behavioral optimization with thermal priority",
+    "scores": {
+        "functional_adequacy": 0.85,
+        "behavioral_performance": 0.94,
+        "structural_feasibility": 0.84,
+        "layout_efficiency": 0.80,
+        "sustainability": 0.85
+    },
+    "functions": [
+        {
+            "id": "F001",
+            "name": "Living Room",
+            "priority": 0.90,
+            "activities": [
+                "relaxation",
+                "entertainment",
+                "socializing"
+            ],
+            "area_required": 24.0,
+            "zone": "social"
+        },
+        {
+            "id": "F002",
+            "name": "Kitchen",
+            "priority": 0.85,
+            "activities": [
+                "cooking",
+                "food_preparation",
+                "storage"
+            ],
+            "area_required": 14.0,
+            "zone": "service"
+        },
+        {
+            "id": "F003",
+            "name": "Dining Room",
+            "priority": 0.75,
+            "activities": [
+                "eating",
+                "gathering"
+            ],
+            "area_required": 11.0,
+            "zone": "social"
+        },
+        {
+            "id": "F004",
+            "name": "Master Bedroom",
+            "priority": 0.92,
+            "activities": [
+                "sleeping",
+                "resting",
+                "privacy"
+            ],
+            "area_required": 17.0,
+            "zone": "private"
+        },
+        {
+            "id": "F005",
+            "name": "Bedroom 2",
+            "priority": 0.78,
+            "activities": [
+                "sleeping",
+                "studying"
+            ],
+            "area_required": 13.0,
+            "zone": "private"
+        },
+        {
+            "id": "F006",
+            "name": "Bedroom 3",
+            "priority": 0.72,
+            "activities": [
+                "sleeping",
+                "playing"
+            ],
+            "area_required": 11.0,
+            "zone": "private"
+        },
+        {
+            "id": "F007",
+            "name": "Bathroom",
+            "priority": 0.80,
+            "activities": [
+                "bathing",
+                "hygiene"
+            ],
+            "area_required": 7.5,
+            "zone": "service"
+        },
+        {
+            "id": "F008",
+            "name": "Toilet",
+            "priority": 0.60,
+            "activities": [
+                "hygiene"
+            ],
+            "area_required": 3.5,
+            "zone": "service"
+        }
+    ],
+    "behaviors": {
+        "thermal": {
+            "expected": {
+                "target": 21.0,
+                "unit": "°C",
+                "tolerance": 0.10
+            },
+            "actual": {
+                "value": 21.2,
+                "satisfaction": 0.99
+            }
+        },
+        "acoustic": {
+            "expected": {
+                "target": 35.0,
+                "unit": "dB",
+                "tolerance": 0.15
+            },
+            "actual": {
+                "value": 36.5,
+                "satisfaction": 0.88
+            }
+        },
+        "lighting": {
+            "expected": {
+                "target": 300.0,
+                "unit": "lux",
+                "tolerance": 0.10
+            },
+            "actual": {
+                "value": 290.0,
+                "satisfaction": 0.94
+            }
+        },
+        "ventilation": {
+            "expected": {
+                "target": 0.5,
+                "unit": "ACH",
+                "tolerance": 0.20
+            },
+            "actual": {
+                "value": 0.52,
+                "satisfaction": 0.98
+            }
+        }
+    },
+    "structures": [
+        {
+            "id": "S001",
+            "type": "external_wall",
+            "material": "high_insulation_concrete",
+            "u_value": 0.18,
+            "stc_rating": 50,
+            "thickness": 0.35
+        },
+        {
+            "id": "S002",
+            "type": "internal_wall",
+            "material": "standard_drywall",
+            "u_value": 0.50,
+            "stc_rating": 42,
+            "thickness": 0.12
+        },
+        {
+            "id": "S003",
+            "type": "window",
+            "material": "triple_glazed",
+            "u_value": 0.9,
+            "stc_rating": 28,
+            "area_ratio": 0.15
+        },
+        {
+            "id": "S004",
+            "type": "floor",
+            "material": "insulated_slab",
+            "u_value": 0.20,
+            "stc_rating": 48,
+            "thickness": 0.25
+        },
+        {
+            "id": "S005",
+            "type": "roof",
+            "material": "high_performance_roof",
+            "u_value": 0.14,
+            "stc_rating": 42,
+            "thickness": 0.40
+        },
+        {
+            "id": "S006",
+            "type": "insulation_layer",
+            "material": "polyurethane_foam",
+            "u_value": 0.025,
+            "stc_rating": null,
+            "thickness": 0.12
+        },
+        {
+            "id": "S007",
+            "type": "thermal_bridge_break",
+            "material": "thermal_break_strip",
+            "u_value": 0.03,
+            "stc_rating": null,
+            "thickness": 0.02
+        }
+    ],
+    "layout": {
+        "total_area": 101.0,
+        "bounding_box": {
+            "width": 11.5,
+            "height": 11.0
+        },
+        "compactness": 0.80,
+        "circulation_efficiency": 0.82,
+        "adjacency_satisfaction": 0.88,
+        "rooms": [
+            {
+                "id": "R001",
+                "function": "Living Room",
+                "x": 0.0,
+                "y": 0.0,
+                "width": 6.0,
+                "height": 4.0,
+                "area": 24.0
+            },
+            {
+                "id": "R002",
+                "function": "Kitchen",
+                "x": 6.0,
+                "y": 0.0,
+                "width": 4.0,
+                "height": 3.5,
+                "area": 14.0
+            },
+            {
+                "id": "R003",
+                "function": "Dining Room",
+                "x": 6.0,
+                "y": 3.5,
+                "width": 3.5,
+                "height": 3.15,
+                "area": 11.0
+            },
+            {
+                "id": "R004",
+                "function": "Master Bedroom",
+                "x": 0.0,
+                "y": 4.0,
+                "width": 4.25,
+                "height": 4.0,
+                "area": 17.0
+            },
+            {
+                "id": "R005",
+                "function": "Bedroom 2",
+                "x": 4.25,
+                "y": 4.0,
+                "width": 3.25,
+                "height": 4.0,
+                "area": 13.0
+            },
+            {
+                "id": "R006",
+                "function": "Bedroom 3",
+                "x": 0.0,
+                "y": 8.0,
+                "width": 3.67,
+                "height": 3.0,
+                "area": 11.0
+            },
+            {
+                "id": "R007",
+                "function": "Bathroom",
+                "x": 3.67,
+                "y": 8.0,
+                "width": 3.0,
+                "height": 2.5,
+                "area": 7.5
+            },
+            {
+                "id": "R008",
+                "function": "Toilet",
+                "x": 6.67,
+                "y": 8.0,
+                "width": 1.75,
+                "height": 2.0,
+                "area": 3.5
+            }
+        ],
+        "circulation_paths": [
+            {
+                "from": "Entry",
+                "to": "Living Room",
+                "distance": 1.2
+            },
+            {
+                "from": "Living Room",
+                "to": "Kitchen",
+                "distance": 2.5
+            },
+            {
+                "from": "Kitchen",
+                "to": "Dining Room",
+                "distance": 1.8
+            },
+            {
+                "from": "Living Room",
+                "to": "Master Bedroom",
+                "distance": 3.0
+            },
+            {
+                "from": "Master Bedroom",
+                "to": "Bathroom",
+                "distance": 5.8
+            },
+            {
+                "from": "Bedroom 2",
+                "to": "Bathroom",
+                "distance": 4.5
+            }
+        ],
+        "adjacency_matrix": {
+            "Living-Kitchen": 0.85,
+            "Kitchen-Dining": 0.90,
+            "Living-Dining": 0.75,
+            "Bedrooms-Bathroom": 0.65,
+            "Bedrooms-Kitchen": -0.5
+        }
+    },
+    "refinement_history": [
+        {
+            "iteration": 1,
+            "action": "Upgraded to triple glazing",
+            "score_before": 0.78,
+            "score_after": 0.82
+        },
+        {
+            "iteration": 2,
+            "action": "Added thermal bridge breaks",
+            "score_before": 0.82,
+            "score_after": 0.85
+        },
+        {
+            "iteration": 3,
+            "action": "Enhanced roof insulation",
+            "score_before": 0.85,
+            "score_after": 0.86
+        }
+    ]
+}

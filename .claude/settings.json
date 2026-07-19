@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(\"c:/Users/sanvi/OneDrive/Desktop/layout/venv/Scripts/python.exe\" -c \"import lxml; print\\('lxml ok'\\)\")",
+      "Bash(cmd /c \"\\\\\"c:\\\\\\\\Users\\\\\\\\sanvi\\\\\\\\OneDrive\\\\\\\\Desktop\\\\\\\\layout\\\\\\\\venv\\\\\\\\Scripts\\\\\\\\python.exe\\\\\" generate_report_docx.py 2>&1\")",
+      "Bash(cmd /c \"cd \\\\\"c:\\\\\\\\Users\\\\\\\\sanvi\\\\\\\\OneDrive\\\\\\\\Desktop\\\\\\\\layout\\\\\" && \\\\\"venv\\\\\\\\Scripts\\\\\\\\python.exe\\\\\" generate_use_case_docx.py 2>&1\")",
+      "Bash(cmd /c \"cd \\\\\"c:\\\\\\\\Users\\\\\\\\sanvi\\\\\\\\OneDrive\\\\\\\\Desktop\\\\\\\\layout\\\\\" && \\\\\"venv\\\\\\\\Scripts\\\\\\\\python.exe\\\\\" generate_use_case_docx.py\")",
+      "Bash(cmd /c \"dir \\\\\"c:\\\\\\\\Users\\\\\\\\sanvi\\\\\\\\OneDrive\\\\\\\\Desktop\\\\\\\\layout\\\\\\\\docs\\\\\\\\\\\\\" 2>&1\")",
+      "Bash(cmd /c \"cd \\\\\"c:\\\\\\\\Users\\\\\\\\sanvi\\\\\\\\OneDrive\\\\\\\\Desktop\\\\\\\\layout\\\\\" && \\\\\"venv\\\\\\\\Scripts\\\\\\\\python.exe\\\\\" -c \\\\\"import sys; print\\(sys.version\\); from pathlib import Path; p = Path\\('docs'\\); p.mkdir\\(exist_ok=True\\); print\\('docs created:', p.exists\\(\\)\\)\\\\\"\")",
+      "Bash(cmd /c \"cd \\\\\"c:\\\\\\\\Users\\\\\\\\sanvi\\\\\\\\OneDrive\\\\\\\\Desktop\\\\\\\\layout\\\\\" && \\\\\"venv\\\\\\\\Scripts\\\\\\\\python.exe\\\\\" -W ignore generate_use_case_docx.py > output_log.txt 2>&1 & type output_log.txt\")"
+    ]
+  }
+}
