@@ -25,6 +25,7 @@ from ..agents.scoring_agent import ScoringAgent
 from ..agents.refinement_agent import RefinementAgent
 from ..agents.layout_agent import LayoutGenerationAgent
 from ..core.behavior_calculator import BehaviorCalculator
+from ..core.brief_validator import BriefValidator
 
 logger = logging.getLogger(__name__)
 
@@ -133,6 +134,7 @@ class PipelineOrchestrator:
         self.refiner = RefinementAgent(max_iterations=refinement_max_iterations)
         self.layout_agent = LayoutGenerationAgent()
         self.behavior_calculator = BehaviorCalculator()
+        self._brief_spec = None  # built from the root problem node per run (brief validator gate)
         
         # Initialize complexity calculator for adaptive parameters
         self.complexity_calculator = ComplexityCalculator()
@@ -249,6 +251,15 @@ class PipelineOrchestrator:
                         problem_node.layout.calculate_metrics()
             
             logger.info("🔍 Step 2: Conducting research...")
+            # ✅ Brief validator gate (Step 3): derive the brief spec ONCE from the
+            # root node (which the encoder built from the brief). Every alternative
+            # is checked against it before ranking — an invalid design never wins.
+            try:
+                self._brief_spec = BriefValidator.build_brief_spec(problem_node)
+            except Exception as e:
+                logger.warning(f"   ⚠ Could not build brief spec (validator disabled): {e}")
+                self._brief_spec = None
+
             research_findings = self.research.research_node(problem_node)
             problem_node = self.research.enhance_node_with_research(problem_node, research_findings)
             logger.info(f"   ✓ Found {len(research_findings['similar_spaces'])} precedents")
@@ -356,14 +367,35 @@ class PipelineOrchestrator:
                 scored_alternatives = []
                 for alt in alternatives:
                     try:
+                        # ✅ Recompute actual behaviors from structures BEFORE scoring, so
+                        # scores reflect the physics (S → Bs) rather than the encoder's static
+                        # estimates. Same call the convergence loop uses; direction is handled
+                        # inside the calculator (actual_value = target × performance_ratio).
+                        alt = self.behavior_calculator.calculate_actual_behaviors(alt)
                         scores = await self.scoring.score_node(alt)
-                        alt.composite_score = scores['scores']['composite']
-                        scored_alternatives.append((alt, scores['scores']['composite']))
+                        composite = scores['scores']['composite']
+
+                        # ✅ Hard gate: a design that violates the brief may never rank.
+                        if self._brief_spec is not None:
+                            vres = BriefValidator.validate(alt, self._brief_spec)
+                            alt.metadata['brief_validation'] = vres.to_dict()
+                            if not vres.passed:
+                                logger.warning(
+                                    f"   ✗ Node {alt.node_id[:8]} violates brief "
+                                    f"({'; '.join(vres.errors)}) → score forced to 0.0"
+                                )
+                                composite = 0.0
+
+                        alt.composite_score = composite
+                        scored_alternatives.append((alt, composite))
                     except Exception as e:
-                        logger.warning(f"   ⚠ Scoring failed for node {alt.node_id[:8]}: {e}")
-                        # Fallback: estimate quality
-                        alt.composite_score = self._estimate_node_quality(alt)
-                        scored_alternatives.append((alt, alt.composite_score))
+                        # ✅ A node that cannot be scored gets 0.0 — never a plausible
+                        # completeness estimate. An unscoreable design must not rank.
+                        logger.warning(
+                            f"   ✗ Scoring failed for node {alt.node_id[:8]} → score 0.0: {e}"
+                        )
+                        alt.composite_score = 0.0
+                        scored_alternatives.append((alt, 0.0))
                 
                 # Sort by score (highest first)
                 scored_alternatives.sort(key=lambda x: x[1], reverse=True)
@@ -422,10 +454,29 @@ class PipelineOrchestrator:
                             )
 
                             try:
+                                aggregated = self.behavior_calculator.calculate_actual_behaviors(aggregated)
                                 agg_scores = await self.scoring.score_node(aggregated)
                                 aggregated.composite_score = agg_scores['scores']['composite']
-                            except Exception:
-                                aggregated.composite_score = top_score
+                            except Exception as e:
+                                # ✅ A merged design that fails to score gets 0.0, not the
+                                # best score — it must not inherit a rank it didn't earn.
+                                logger.warning(
+                                    f"   ✗ Scoring failed for aggregated node → score 0.0: {e}"
+                                )
+                                aggregated.composite_score = 0.0
+
+                            # ✅ Same hard gate for the merged design: aggregation must
+                            # not produce a brief-violating composite that outranks
+                            # valid alternatives.
+                            if self._brief_spec is not None:
+                                vres = BriefValidator.validate(aggregated, self._brief_spec)
+                                aggregated.metadata['brief_validation'] = vres.to_dict()
+                                if not vres.passed:
+                                    logger.warning(
+                                        f"   ✗ Aggregated node violates brief "
+                                        f"({'; '.join(vres.errors)}) → score forced to 0.0"
+                                    )
+                                    aggregated.composite_score = 0.0
 
                             alternatives.insert(0, aggregated)
                             score_list = [f"{n.composite_score:.3f}" for n in high_scoring]
@@ -692,34 +743,19 @@ class PipelineOrchestrator:
         if len(alternatives) <= target_count:
             return alternatives
         
-        # Sort by score (assumes alternatives are already scored)
-        scored = [
-            (alt, getattr(alt, 'composite_score', 0.0) or self._estimate_node_quality(alt))
-            for alt in alternatives
-        ]
+        # Sort by real composite score. A missing score is treated as 0.0 — never
+        # replaced by a completeness estimate, which would rescue brief-violating
+        # nodes that the validator gate forced to 0.0.
+        def _score_of(alt):
+            s = getattr(alt, 'composite_score', None)
+            return float(s) if s is not None else 0.0
+
+        scored = [(alt, _score_of(alt)) for alt in alternatives]
         scored.sort(key=lambda x: x[1], reverse=True)
-        
+
         # Return top target_count
         return [alt for alt, _ in scored[:target_count]]
-    
-    def _estimate_node_quality(self, node: FBSLLayoutNode) -> float:
-        """Estimate node quality from completeness (fallback when no score available)"""
-        quality = 0.0
-        
-        # FBSL completeness
-        if node.functions:
-            quality += 0.25
-        if node.behaviors:
-            quality += 0.25
-        if node.structures:
-            quality += 0.25
-        if node.layout and node.layout.rooms:
-            room_count = len(node.layout.rooms) if isinstance(node.layout.rooms, dict) else len(node.layout.rooms)
-            if room_count > 0:
-                quality += 0.25
-        
-        return quality
-    
+
     async def _convergence_loop(
         self,
         initial_node: FBSLLayoutNode
