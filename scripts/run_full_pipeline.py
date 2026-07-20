@@ -111,10 +111,20 @@ async def run_pipeline(args):
                 print(f"      ✓ Copied adjacency graph")
                 break
         
-        # Save basic metadata JSON
+        # Save the COMPLETE FBSL representation (Functions, Behaviors,
+        # Structures, Layout with coordinates + adjacency matrices) alongside
+        # the prototype — the design record, not just the scores.
+        fbsl = design.get('fbsl')
+        if fbsl:
+            with open(proto_dir / 'fbsl_data.json', 'w', encoding='utf-8') as f:
+                json.dump(fbsl, f, ensure_ascii=False, indent=2, default=str)
+            print(f"      ✓ Saved complete FBSL (fbsl_data.json)")
+
+        # Save basic metadata JSON (scores + flags, without the full FBSL blob)
         metadata_file = proto_dir / 'metadata.json'
+        meta = {k: v for k, v in design.items() if k != 'fbsl'}
         with open(metadata_file, 'w', encoding='utf-8') as f:
-            json.dump(design, f, ensure_ascii=False, indent=2, default=str)
+            json.dump(meta, f, ensure_ascii=False, indent=2, default=str)
         print(f"      ✓ Saved metadata")
         
         # Generate comprehensive FBSL reports

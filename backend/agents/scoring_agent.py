@@ -323,7 +323,15 @@ class ScoringAgent:
         # If metrics aren't calculated, assume reasonable defaults rather than 0.0
         space_util = float(getattr(layout, 'space_utilization_ratio', None) or 0.7)  # Default 70% utilization
         circ_eff = float(getattr(layout, 'circulation_efficiency', None) or 0.8)  # Default 80% efficiency
-        adj_sat = float(getattr(layout, 'adjacency_satisfaction_score', None) or 0.6)  # Default 60% satisfaction
+        # ✅ Adjacency: when the layout agent MEASURED satisfaction against the
+        # brief's requirements, trust it — including a genuine 0.0. The 0.6
+        # default only applies to layouts that never went through placement
+        # (the old `or 0.6` silently turned every measured 0.0 into 0.6).
+        _adj_raw = getattr(layout, 'adjacency_satisfaction_score', None)
+        if (getattr(layout, 'metadata', None) or {}).get('adjacency_measured'):
+            adj_sat = float(_adj_raw if _adj_raw is not None else 0.0)
+        else:
+            adj_sat = float(_adj_raw or 0.6)
         compact = float(getattr(layout, 'compactness_score', None) or 0.5)  # Default 0.5 compactness
 
         # Weighted combination (internal weights)

@@ -174,14 +174,43 @@ class LayoutGenerationAgent:
             aspect = 1.2
         aspect = min(max(aspect, 0.4), 4.0)
 
+        required_pairs = self._brief_required_pairs(node)
         optimized_positions = self._squarified_treemap_placement(
-            room_specs, node.layout.rooms, aspect=aspect
+            room_specs, node.layout.rooms, aspect=aspect,
+            required_pairs=required_pairs
         )
         logger.info(f"  → Treemap placement complete (gap-free tiling, aspect={aspect:.2f})")
         
         # Step 5: Generate room polygons
         room_polygons = self._generate_room_polygons(optimized_positions, room_specs)
         logger.info(f"  → Room polygons generated: {len(room_polygons)} rooms")
+
+        # ✅ Persist L onto the FBSL model itself: every Room carries its
+        # coordinates, dimensions, and adjacency lists. Before this, the
+        # geometry lived only in the SVG — the stored FBSL had no L.
+        for rid, pos in optimized_positions.items():
+            room = node.layout.rooms.get(rid)
+            if room is None:
+                continue
+            room.position_vector = {'x': round(pos['x'], 3), 'y': round(pos['y'], 3), 'z': 0.0}
+            room.width = round(pos['width'], 3)
+            room.length = round(pos['length'], 3)
+            room.actual_adjacencies = [
+                other for other, opos in optimized_positions.items()
+                if other != rid and self._rects_share_wall(pos, opos)
+            ]
+        if required_pairs:
+            type_rooms: Dict[str, List[str]] = {}
+            for rid, room in node.layout.rooms.items():
+                type_rooms.setdefault((room.room_type or '').lower(), []).append(rid)
+            for t1, t2, kind in required_pairs:
+                if kind != 'required':
+                    continue
+                for r1 in type_rooms.get(t1, []):
+                    for r2 in type_rooms.get(t2, []):
+                        room1 = node.layout.rooms[r1]
+                        if r2 not in room1.required_adjacencies:
+                            room1.required_adjacencies.append(r2)
         
         # Step 6: Generate circulation paths using A* pathfinding
         circulation = self._generate_circulation(
@@ -202,6 +231,21 @@ class LayoutGenerationAgent:
         
         # Step 8: Calculate layout metrics
         layout.calculate_metrics()
+
+        # ✅ MEASURED adjacency satisfaction against the BRIEF's requirements
+        # (calculate_metrics uses the weighted preference matrix, which is a
+        # different thing). 1.0 when the brief stated no adjacency needs.
+        adj_score, adj_details = self._adjacency_satisfaction(
+            optimized_positions, node.layout.rooms, required_pairs
+        )
+        layout.adjacency_satisfaction_score = adj_score
+        layout.metadata['adjacency_requirements'] = adj_details
+        layout.metadata['adjacency_measured'] = True
+        if required_pairs:
+            logger.info(
+                f"  → Brief adjacency satisfaction: {adj_score:.2f} "
+                f"({sum(1 for d in adj_details if d['satisfied'])}/{len(adj_details)} requirements)"
+            )
         logger.info(f"✓ Layout generation complete: score={layout.compactness_score:.3f}")
 
         # Enhanced visuals (compass, strict adjacencies)
@@ -495,12 +539,103 @@ class LayoutGenerationAgent:
                 return zone
         return 'service'
 
+    @staticmethod
+    def _brief_required_pairs(node) -> List[tuple]:
+        """Type-level adjacency requirements from the brief:
+        [(type1, type2, 'required'|'avoid'), ...]"""
+        pairs = []
+        for a in ((getattr(node, 'metadata', None) or {}).get('required_adjacencies') or []):
+            if not isinstance(a, dict):
+                continue
+            t1 = str(a.get('room1', '')).strip().lower()
+            t2 = str(a.get('room2', '')).strip().lower()
+            if t1 and t2 and t1 != t2:
+                kind = 'avoid' if str(a.get('type', '')).lower() == 'avoid' else 'required'
+                pairs.append((t1, t2, kind))
+        return pairs
+
+    @staticmethod
+    def _rects_share_wall(p: Dict[str, float], q: Dict[str, float],
+                          min_overlap: float = 0.3, eps: float = 1e-3) -> bool:
+        """True if two placed tiles share a wall segment of >= min_overlap m."""
+        px2, py2 = p['x'] + p['width'], p['y'] + p['length']
+        qx2, qy2 = q['x'] + q['width'], q['y'] + q['length']
+        if abs(px2 - q['x']) < eps or abs(qx2 - p['x']) < eps:
+            if min(py2, qy2) - max(p['y'], q['y']) >= min_overlap:
+                return True
+        if abs(py2 - q['y']) < eps or abs(qy2 - p['y']) < eps:
+            if min(px2, qx2) - max(p['x'], q['x']) >= min_overlap:
+                return True
+        return False
+
+    def _adjacency_satisfaction(
+        self,
+        positions: Dict[str, Dict[str, float]],
+        rooms: Dict[str, Room],
+        pairs: List[tuple],
+    ) -> tuple:
+        """Measure brief adjacency satisfaction on placed tiles.
+
+        A required (t1, t2) is satisfied when ANY room of t1 shares a wall
+        with ANY room of t2; an avoid pair is satisfied when NO instances
+        touch. Returns (score, details): score = satisfied/total, 1.0 when
+        the brief stated no adjacency requirements (nothing to violate).
+        """
+        if not pairs:
+            return 1.0, []
+        by_type: Dict[str, List[str]] = {}
+        for rid in positions:
+            rtype = (rooms[rid].room_type if rid in rooms else '').lower()
+            by_type.setdefault(rtype, []).append(rid)
+
+        details = []
+        satisfied = 0
+        for t1, t2, kind in pairs:
+            touching = any(
+                self._rects_share_wall(positions[r1], positions[r2])
+                for r1 in by_type.get(t1, [])
+                for r2 in by_type.get(t2, [])
+            )
+            ok = touching if kind == 'required' else not touching
+            satisfied += 1 if ok else 0
+            details.append({'room1': t1, 'room2': t2, 'type': kind, 'satisfied': ok})
+        return satisfied / len(pairs), details
+
+    @staticmethod
+    def _pair_aware_order(items: List[tuple], rooms: Dict[str, Room],
+                          pairs: List[tuple]) -> List[tuple]:
+        """Order [(rid, area)] area-desc but pull required partners adjacent,
+        so the squarify shelf tiles them against each other."""
+        type_of = {rid: (rooms[rid].room_type.lower() if rid in rooms else '')
+                   for rid, _ in items}
+        partners: Dict[str, set] = {}
+        for t1, t2, kind in pairs:
+            if kind == 'required':
+                partners.setdefault(t1, set()).add(t2)
+                partners.setdefault(t2, set()).add(t1)
+
+        area_desc = sorted(items, key=lambda t: -t[1])
+        ordered, used = [], set()
+        for rid, a in area_desc:
+            if rid in used:
+                continue
+            ordered.append((rid, a))
+            used.add(rid)
+            for want in partners.get(type_of.get(rid, ''), ()):  # pull partner next
+                for rid2, a2 in area_desc:
+                    if rid2 not in used and type_of.get(rid2) == want:
+                        ordered.append((rid2, a2))
+                        used.add(rid2)
+                        break
+        return ordered
+
     def _squarified_treemap_placement(
         self,
         room_specs: Dict[str, Dict],
         rooms: Dict[str, Room],
         aspect: float = 1.2,
         circulation_frac: float = 0.0,
+        required_pairs: Optional[List[tuple]] = None,
     ) -> Dict[str, Dict[str, float]]:
         """
         Gap-free rectangular dissection of the footprint.
@@ -530,26 +665,49 @@ class LayoutGenerationAgent:
             zones.setdefault(self._zone_of(rtype), []).append(rid)
 
         order = [z for z in ('service', 'social', 'private') if z in zones]
-        positions: Dict[str, Dict[str, float]] = {}
-        x_cursor = 0.0
-        for z in order:
-            zone_area = sum(room_specs[r]['area'] for r in zones[z]) / max(1e-9, (1.0 - circulation_frac))
-            zw = W * zone_area / max(footprint, 1e-9)
-            items = [(r, room_specs[r]['area']) for r in zones[z]]
-            placed = self._squarify_rect(items, x_cursor, 0.0, zw, H)
-            for rid, (rx, ry, rw, rh) in placed.items():
-                positions[rid] = {'x': rx, 'y': ry, 'width': rw, 'length': rh}
-            x_cursor += zw
 
-        return positions
+        def _tile(pair_aware: bool) -> Dict[str, Dict[str, float]]:
+            positions: Dict[str, Dict[str, float]] = {}
+            x_cursor = 0.0
+            for z in order:
+                zone_area = sum(room_specs[r]['area'] for r in zones[z]) / max(1e-9, (1.0 - circulation_frac))
+                zw = W * zone_area / max(footprint, 1e-9)
+                items = [(r, room_specs[r]['area']) for r in zones[z]]
+                if pair_aware and required_pairs:
+                    items = self._pair_aware_order(items, rooms, required_pairs)
+                placed = self._squarify_rect(items, x_cursor, 0.0, zw, H,
+                                             keep_order=pair_aware)
+                for rid, (rx, ry, rw, rh) in placed.items():
+                    positions[rid] = {'x': rx, 'y': ry, 'width': rw, 'length': rh}
+                x_cursor += zw
+            return positions
+
+        default = _tile(pair_aware=False)
+        if not required_pairs:
+            return default
+
+        # Adjacency-aware attempt: same zones, same areas, but required
+        # partners tile consecutively. Keep whichever placement satisfies
+        # more of the brief's adjacency requirements.
+        paired = _tile(pair_aware=True)
+        s_default, _ = self._adjacency_satisfaction(default, rooms, required_pairs)
+        s_paired, _ = self._adjacency_satisfaction(paired, rooms, required_pairs)
+        logger.info(
+            f"  → Adjacency-aware tiling: default={s_default:.2f} "
+            f"paired={s_paired:.2f} → using {'paired' if s_paired > s_default else 'default'}"
+        )
+        return paired if s_paired > s_default else default
 
     @staticmethod
-    def _squarify_rect(items, x, y, w, h) -> Dict[str, tuple]:
+    def _squarify_rect(items, x, y, w, h, keep_order: bool = False) -> Dict[str, tuple]:
         """
         Squarified treemap: tile rect (x, y, w, h) with items [(id, area)],
         preferring near-square tiles. Returns {id: (x, y, w, h)}.
+        keep_order=True preserves the caller's item order (used for
+        adjacency-aware placement where partners must tile consecutively).
         """
-        items = sorted(items, key=lambda t: -t[1])
+        if not keep_order:
+            items = sorted(items, key=lambda t: -t[1])
         total = sum(a for _, a in items) or 1.0
         scale = (w * h) / total
         items = [(n, a * scale) for n, a in items]  # areas now sum to w*h
