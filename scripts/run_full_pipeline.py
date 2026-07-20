@@ -30,6 +30,15 @@ sys.path.insert(0, str(ROOT))
 from backend.pipeline.orchestrator import PipelineOrchestrator
 from backend.utils.report_generator import FBSLReportGenerator
 
+
+def ensure_prototype_dir(project_id: str, rank: int, node_id: str) -> Path:
+    """Create (and return) the per-prototype output directory, matching the
+    layout FBSLReportGenerator uses: outputs/{project_id}/prototypes/{rank}_{node_id[:8]}"""
+    proto_dir = Path('outputs') / project_id / 'prototypes' / f'{rank}_{node_id[:8]}'
+    proto_dir.mkdir(parents=True, exist_ok=True)
+    return proto_dir
+
+
 async def run_pipeline(args):
     orchestrator = PipelineOrchestrator()
     report_gen = FBSLReportGenerator()
