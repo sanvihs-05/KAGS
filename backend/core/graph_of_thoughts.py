@@ -119,11 +119,20 @@ class GraphOfThoughtsEngine:
 
             logger.info(f"  Expanding node at depth {depth}: {current_node.node_id[:8]}...")
 
-            # Expand node using strategies
-            children = await self.expand_node(current_node, expansion_strategies)
+            # Level 1 = the five named design strategies (Functional Priority,
+            # Performance Optimized, Structural Efficiency, Spatial Compactness,
+            # Balanced), each with REAL parameter deltas. Deeper levels apply
+            # micro-transformations (layout permutation, natural ventilation,
+            # materials) that specialize each strategy — Compact-Linear,
+            # Balanced-Natural-Vent, etc.
+            if depth == 0:
+                children = await self._strategy_seeds(current_node)
+            else:
+                children = await self.expand_node(current_node, expansion_strategies)
 
-            # Add top breadth children
-            for child in children[:self.breadth]:
+            # Add top breadth children (all 5 strategies are kept at Level 1)
+            keep = len(children) if depth == 0 else self.breadth
+            for child in children[:keep]:
                 # Add child node
                 self._add_node_to_graph(child)
                 
@@ -141,6 +150,14 @@ class GraphOfThoughtsEngine:
                 # Add to queue for further expansion
                 queue.append((child, depth + 1))
                 nodes_generated += 1
+
+            # ✅ Never stop before the design space exists: every Level-1
+            # strategy must get its Level-2 specializations. The stagnation
+            # counter runs on quality ESTIMATES (no real scores exist during
+            # generation), which never improve — it used to kill expansion
+            # after 2 of the 5 strategies, so 3 strategies were never explored.
+            if depth <= 1:
+                continue
 
             # ✅ SCORE-BASED STOPPING: Check best composite score improvement
             # If high scores are coming and there's no improvement, stop exploring
@@ -217,31 +234,132 @@ class GraphOfThoughtsEngine:
                          strategies: List[str]) -> List[FBSLLayoutNode]:
         """
         Expand node using transformation strategies
-        
+
         Implements: f_expand(n) = {n1, n2, ..., nk}
+
+        Children are INTERLEAVED across strategies (round-robin) rather than
+        concatenated in strategy order. The caller truncates to `breadth`, and
+        with concatenation the layout/ventilation variants (emitted last) were
+        always the ones cut — every surviving child was a same-geometry clone,
+        which is why final prototypes came out identical.
         """
-        children = []
-        
+        per_strategy = []
+
         for strategy in strategies:
             if strategy == 'functional':
-                variants = await self._functional_decomposition(node)
-                children.extend(variants)
-            
+                per_strategy.append(await self._functional_decomposition(node))
             elif strategy == 'behavioral':
-                variants = await self._behavioral_optimization(node)
-                children.extend(variants)
-            
+                per_strategy.append(await self._behavioral_optimization(node))
             elif strategy == 'structural':
-                variants = await self._structural_variation(node)
-                children.extend(variants)
-            
+                per_strategy.append(await self._structural_variation(node))
             elif strategy == 'layout':
-                variants = await self._layout_permutation(node)
-                children.extend(variants)
-        
+                per_strategy.append(await self._layout_permutation(node))
+
+        children = []
+        # Geometry/physics-changing variants first within each round so that a
+        # tight breadth keeps one of each KIND before a second of any kind.
+        per_strategy.sort(key=lambda v: 0 if any(
+            'layout_aspect' in c.metadata or 'ventilation_strategy' in c.metadata
+            for c in v) else 1)
+        idx = 0
+        while True:
+            added = False
+            for variants in per_strategy:
+                if idx < len(variants):
+                    children.append(variants[idx])
+                    added = True
+            if not added:
+                break
+            idx += 1
+
         logger.info(f"    Generated {len(children)} child nodes")
         return children
     
+    async def _strategy_seeds(self, node: FBSLLayoutNode) -> List[FBSLLayoutNode]:
+        """Level-1 expansion: five named design strategies, each differing in
+        parameters the pipeline actually computes on (room areas, footprint
+        aspect, glazing ratio, partition thickness, materials) — not labels.
+
+        Area scalings stay within the brief validator's ±10% total-area grace
+        so a strategy can never be auto-rejected just for its emphasis.
+        """
+        seeds = []
+
+        def _scale_rooms(v, factor_fn):
+            if not (v.layout and v.layout.rooms):
+                return
+            total = 0.0
+            for room in v.layout.rooms.values():
+                f = v.functions.get(getattr(room, 'function_id', None))
+                priority = getattr(f, 'priority', 0.7) if f else 0.7
+                room.area = round(float(room.area or 0) * factor_fn(priority), 2)
+                total += room.area
+            v.layout.total_area = total
+
+        def _scale_windows(v, factor):
+            for s in v.structures.values():
+                dims = s.dimensions or {}
+                if 'window_ratio' in dims:
+                    dims['window_ratio'] = max(0.05, min(0.40, float(dims['window_ratio']) * factor))
+                    s.dimensions = dims
+
+        def _set_partitions(v, thickness):
+            for s in v.structures.values():
+                if getattr(s.structure_type, 'value', '') == 'partition':
+                    dims = s.dimensions or {}
+                    dims['thickness'] = thickness
+                    s.dimensions = dims
+
+        # 1. Functional Priority — enlarge high-priority rooms at the expense
+        # of low-priority ones (net ~area-neutral).
+        v = self._create_child_node(node, TransformationType.FUNCTIONAL_DECOMPOSITION)
+        _scale_rooms(v, lambda p: 1.08 if p > 0.8 else (0.92 if p < 0.6 else 1.0))
+        v.metadata['layout_aspect'] = 1.5
+        v.metadata['description'] = 'Functional Priority: largest allocation to high-priority rooms'
+        self._tag_variant(v, 'functional_priority')
+        seeds.append(v)
+
+        # 2. Performance Optimized — thicker partitions (acoustics), slightly
+        # reduced glazing (thermal), keeps mechanical ventilation.
+        v = self._create_child_node(node, TransformationType.BEHAVIORAL_OPTIMIZATION)
+        _scale_windows(v, 0.90)
+        _set_partitions(v, 0.15)
+        v.metadata['layout_aspect'] = 1.1
+        v.metadata['description'] = 'Performance Optimized: exceed thermal/acoustic targets'
+        self._tag_variant(v, 'performance_optimized')
+        seeds.append(v)
+
+        # 3. Structural Efficiency — lightweight system: thin partitions,
+        # compact rooms, elongated economical footprint.
+        v = self._create_child_node(node, TransformationType.STRUCTURAL_VARIATION)
+        _scale_rooms(v, lambda p: 0.95)
+        _set_partitions(v, 0.08)
+        for s in v.structures.values():
+            if s.material_type == 'concrete' and not s.load_bearing:
+                s.material_type = 'steel'
+        v.metadata['layout_aspect'] = 1.35
+        v.metadata['description'] = 'Structural Efficiency: minimize material use and weight'
+        self._tag_variant(v, 'structural_efficiency')
+        seeds.append(v)
+
+        # 4. Spatial Compactness — near-square footprint, slightly tightened rooms.
+        v = self._create_child_node(node, TransformationType.LAYOUT_PERMUTATION)
+        _scale_rooms(v, lambda p: 0.97)
+        v.metadata['layout_aspect'] = 1.05
+        v.metadata['description'] = 'Spatial Compactness: maximize spatial efficiency'
+        self._tag_variant(v, 'spatial_compactness')
+        seeds.append(v)
+
+        # 5. Balanced — baseline parameters, moderate footprint.
+        v = self._create_child_node(node, TransformationType.REFINEMENT)
+        v.metadata['layout_aspect'] = 1.2
+        v.metadata['description'] = 'Balanced Approach: equal weighting across all FBSL dimensions'
+        self._tag_variant(v, 'balanced')
+        seeds.append(v)
+
+        logger.info(f"    Level 1: seeded {len(seeds)} named strategies")
+        return seeds
+
     async def _functional_decomposition(self, node: FBSLLayoutNode) -> List[FBSLLayoutNode]:
         """Decompose functions into sub-functions"""
         variants = []
@@ -293,8 +411,9 @@ class GraphOfThoughtsEngine:
                         variant.add_behavior(beh)
             
             variant.metadata['description'] = 'Focus on high-priority functions'
+            self._tag_variant(variant, 'priority_focus')
             variants.append(variant)
-        
+
         return variants
     
     async def _behavioral_optimization(self, node: FBSLLayoutNode) -> List[FBSLLayoutNode]:
@@ -312,6 +431,7 @@ class GraphOfThoughtsEngine:
                         behav.tolerance *= 1.3  # Increase tolerance
 
             variant.metadata['description'] = 'Relaxed behavior tolerances'
+            self._tag_variant(variant, 'relaxed_tolerances')
             variants.append(variant)
 
         # Strategy B: Natural-ventilation trade-off — a REAL structural change the
@@ -337,6 +457,7 @@ class GraphOfThoughtsEngine:
                         s.dimensions = dims
                 nat_variant.metadata['description'] = 'Natural ventilation (no mechanical HVAC, enlarged glazing)'
                 nat_variant.metadata['ventilation_strategy'] = 'natural'
+                self._tag_variant(nat_variant, 'natural_ventilation')
                 variants.append(nat_variant)
 
         return variants
@@ -357,6 +478,7 @@ class GraphOfThoughtsEngine:
                     struct.material_type = 'brick'
             
             variant.metadata['description'] = 'Alternative material system'
+            self._tag_variant(variant, 'alt_materials')
             variants.append(variant)
         
         return variants
@@ -371,14 +493,31 @@ class GraphOfThoughtsEngine:
         """
         variants = []
 
-        for strategy, aspect in (('compact', 1.05), ('linear', 2.4)):
+        parent_aspect = float(node.metadata.get('layout_aspect', 0) or 0)
+        for strategy, aspect in (('compact', 1.05), ('linear', 2.4), ('courtyard', 0.6)):
+            # Re-emitting the parent's own aspect would create a geometric clone
+            # of the parent that later outranks genuinely different designs.
+            if abs(aspect - parent_aspect) < 0.05:
+                continue
             variant = self._create_child_node(node, TransformationType.LAYOUT_PERMUTATION)
             variant.metadata['description'] = f'{strategy.title()} spatial arrangement (aspect {aspect})'
             variant.metadata['layout_strategy'] = strategy
             variant.metadata['layout_aspect'] = aspect
+            self._tag_variant(variant, f'{strategy}_layout')
             variants.append(variant)
 
         return variants
+
+    @staticmethod
+    def _tag_variant(variant: FBSLLayoutNode, tag: str):
+        """Record the transformation lineage on the node. variant_type is what
+        the final report shows — without it every prototype prints 'N/A' and
+        the user cannot tell the designs apart."""
+        tags = list(variant.metadata.get('variant_tags', []))
+        if tag not in tags:
+            tags.append(tag)
+        variant.metadata['variant_tags'] = tags
+        variant.metadata['variant_type'] = '+'.join(tags)
     
     def _create_child_node(self, parent: FBSLLayoutNode, 
                           transformation: TransformationType) -> FBSLLayoutNode:

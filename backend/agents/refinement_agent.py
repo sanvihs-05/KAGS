@@ -221,8 +221,12 @@ class RefinementAgent:
                 self._add_lighting_structure(test_node)
                 structure_added = True
             elif category == 'ventilation' and required_improvement > 0:
-                self._add_ventilation_structure(test_node)
-                structure_added = True
+                # A natural-ventilation variant made a deliberate trade-off:
+                # re-adding mechanical MEP here would silently turn it back
+                # into the base design and collapse the variant space.
+                if (getattr(node, 'metadata', None) or {}).get('ventilation_strategy') != 'natural':
+                    self._add_ventilation_structure(test_node)
+                    structure_added = True
             elif category == 'spatial' and required_improvement > 0:
                 # For spatial behaviors, modify layout structures
                 self._add_spatial_structure(test_node, behav)

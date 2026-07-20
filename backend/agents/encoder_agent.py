@@ -52,14 +52,52 @@ class EncoderAgent:
         self.llm_model = llm_model or llm_cfg.get('model') or 'llama3.1:8b'
         # Allow overriding Ollama URL via environment or config
         self.ollama_url = os.getenv('OLLAMA_BASE_URL') or llm_cfg.get('base_url') or llm_base_url
-        
-        # Test LLM connection and auto-select preferred installed model (prefer gemma)
-        self.llm_available = self._test_llm_connection()
 
-        if self.llm_available:
-            logger.info(f"✅ Ollama LLM available. Using model {self.llm_model}")
+        # ── Provider selection ───────────────────────────────────────────
+        # KAGS_LLM_PROVIDER=openai switches encoding to ANY OpenAI-compatible
+        # chat-completions API (OpenAI, Groq, OpenRouter, Together, Gemini's
+        # /v1beta/openai endpoint...). Configure with:
+        #   KAGS_LLM_BASE_URL  e.g. https://api.groq.com/openai/v1
+        #   KAGS_LLM_API_KEY   your key
+        #   KAGS_LLM_MODEL     e.g. llama-3.3-70b-versatile
+        #   KAGS_LLM_TIMEOUT   seconds (default 60)
+        # Default remains local Ollama.
+        self.llm_provider = (
+            os.getenv('KAGS_LLM_PROVIDER') or llm_cfg.get('provider') or 'ollama'
+        ).strip().lower()
+        self.openai_base_url = (
+            os.getenv('KAGS_LLM_BASE_URL') or llm_cfg.get('openai_base_url')
+            or 'https://api.openai.com/v1'
+        ).rstrip('/')
+        self.openai_api_key = os.getenv('KAGS_LLM_API_KEY') or llm_cfg.get('openai_api_key')
+        try:
+            self.llm_timeout = int(os.getenv('KAGS_LLM_TIMEOUT') or llm_cfg.get('timeout') or 60)
+        except (TypeError, ValueError):
+            self.llm_timeout = 60
+
+        if self.llm_provider == 'openai':
+            openai_model = os.getenv('KAGS_LLM_MODEL') or llm_cfg.get('openai_model')
+            if openai_model:
+                self.llm_model = openai_model
+            self.llm_available = bool(self.openai_api_key)
+            if self.llm_available:
+                logger.info(
+                    f"✅ OpenAI-compatible LLM configured: {self.openai_base_url} "
+                    f"model={self.llm_model}"
+                )
+            else:
+                logger.warning(
+                    "⚠️ KAGS_LLM_PROVIDER=openai but KAGS_LLM_API_KEY is not set "
+                    "- falling back to rule-based parser"
+                )
         else:
-            logger.warning("⚠️ Ollama LLM not available - falling back to rule-based parser")
+            # Test LLM connection and auto-select preferred installed model (prefer gemma)
+            self.llm_available = self._test_llm_connection()
+
+            if self.llm_available:
+                logger.info(f"✅ Ollama LLM available. Using model {self.llm_model}")
+            else:
+                logger.warning("⚠️ Ollama LLM not available - falling back to rule-based parser")
         
         if vector_store.finnish_embeddings:
             self.finnish_mapper = FinnishFBSLMapper(vector_store.finnish_embeddings)
@@ -267,11 +305,35 @@ Extract all spatial information and return as JSON."""
             return self._fallback_parse(user_input)
 
         try:
-            logger.info("  → Calling Ollama LLM via requests...")
-            
+            logger.info(f"  → Calling LLM ({self.llm_provider}) via requests...")
+
             # If forced to use CLI, run `ollama run <model>` directly
             cli_exe = os.getenv('OLLAMA_CLI_PATH', 'ollama')
-            if use_cli_force:
+            if self.llm_provider == 'openai':
+                headers = {
+                    'Authorization': f'Bearer {self.openai_api_key}',
+                    'Content-Type': 'application/json',
+                }
+                payload = {
+                    'model': self.llm_model,
+                    'messages': [
+                        {'role': 'system', 'content': system_prompt},
+                        {'role': 'user', 'content': user_prompt},
+                    ],
+                    'temperature': 0.1,
+                }
+                response = requests.post(
+                    f"{self.openai_base_url}/chat/completions",
+                    json=payload,
+                    headers=headers,
+                    timeout=self.llm_timeout,
+                )
+                if response.status_code != 200:
+                    raise RuntimeError(
+                        f"LLM API returned status {response.status_code}: {response.text[:400]}"
+                    )
+                response_text = response.json()['choices'][0]['message']['content']
+            elif use_cli_force:
                 try:
                     # Some ollama CLI versions accept the prompt as a positional
                     # argument rather than via a `--prompt` flag.
@@ -300,9 +362,9 @@ Extract all spatial information and return as JSON."""
                     }
                 }
                 response = requests.post(
-                    f"{self.ollama_url}/api/generate", 
+                    f"{self.ollama_url}/api/generate",
                     json=payload,
-                    timeout=60
+                    timeout=self.llm_timeout
                 )
 
                 if response.status_code != 200:
@@ -331,7 +393,7 @@ Extract all spatial information and return as JSON."""
             return spatial_program
             
         except requests.exceptions.Timeout:
-            logger.error("❌ LLM request timed out after 60 seconds")
+            logger.error(f"❌ LLM request timed out after {self.llm_timeout} seconds")
             logger.info("  → Falling back to rule-based parser...")
             return self._fallback_parse(user_input)
             
