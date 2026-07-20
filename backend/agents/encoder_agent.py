@@ -703,6 +703,87 @@ Extract all spatial information and return as JSON."""
         'single': 1, 'double': 2, 'triple': 3,
     }
 
+    # (synonym regex, canonical type, (default_min, default_max), countable?)
+    _LEXICON = [
+        (r'bedrooms?', 'bedroom', (12.0, 16.0), True),
+        (r'bathrooms?', 'bathroom', (4.0, 8.0), True),
+        (r'powder\s*rooms?|toilets?|\bwc\b|water\s*closets?', 'toilet', (2.0, 4.0), True),
+        (r'kitchens?', 'kitchen', (14.0, 18.0), False),
+        (r'living(?:\s*/?\s*dining)?(?:\s*(?:rooms?|areas?))?|great\s*rooms?|lounges?',
+         'living_room', (30.0, 45.0), False),
+        (r'dining(?:\s*(?:rooms?|areas?))?', 'dining', (10.0, 16.0), False),
+        (r'home\s*offices?|offices?|stud(?:y|ies)|studios?', 'office', (10.0, 14.0), False),
+        (r'laundr(?:y|ies)|utility(?:\s*rooms?)?', 'laundry', (4.0, 10.0), False),
+        (r'mud\s*rooms?', 'mudroom', (4.0, 8.0), False),
+        (r'garages?', 'garage', (18.0, 40.0), False),
+        (r'store\s*rooms?|storages?|pantr(?:y|ies)|closets?', 'storage', (4.0, 12.0), False),
+    ]
+
+    @classmethod
+    def _canonical_room_type(cls, mention: str) -> Optional[str]:
+        """Map a matched room mention (e.g. 'dining area') to its canonical type."""
+        mention = mention.strip().lower()
+        for syn, rtype, _area, _countable in cls._LEXICON:
+            if re.fullmatch(syn, mention):
+                return rtype
+        return None
+
+    def _extract_adjacencies(self, text: str, present_types: set) -> List[Dict[str, str]]:
+        """Extract adjacency requirements from connective phrases — the L in
+        FBSL. Without this, briefs parsed by the fallback path carried ZERO
+        adjacency requirements and the layout stage had nothing to satisfy.
+
+        Handles: 'kitchen ... connected to the dining area', 'mudroom that
+        connects to the garage', 'master bedroom with attached bathroom',
+        'open-plan kitchen and living room', and avoid-phrases
+        ('bedrooms separated from the living area').
+        """
+        syn_alt = '|'.join(f'(?:{syn})' for syn, _t, _a, _c in self._LEXICON)
+        connect = r'(?:connect(?:ed|s)?\s+(?:directly\s+)?to|adjacent\s+to|next\s+to|attached\s+to|linked\s+to|beside|opening\s+(?:on|in)?to)'
+        avoid = r'(?:separated?\s+from|away\s+from|far\s+from|isolated\s+from)'
+
+        pairs = []
+
+        def _add(a_txt, b_txt, kind):
+            a, b = self._canonical_room_type(a_txt), self._canonical_room_type(b_txt)
+            if not a or not b or a == b:
+                return
+            if a not in present_types or b not in present_types:
+                return
+            key = (min(a, b), max(a, b), kind)
+            if key in {(min(p['room1'], p['room2']), max(p['room1'], p['room2']), p['type'])
+                       for p in pairs}:
+                return
+            pairs.append({'room1': a, 'room2': b, 'type': kind, 'strength': 'high'})
+
+        # "A ... connected to (the) B" — allow qualifier words in between
+        # (e.g. "kitchen of 16 sqm connected to the dining area",
+        #  "mudroom that connects to the garage")
+        for m in re.finditer(
+                r'\b(?P<a>' + syn_alt + r')\b[^.;,]{0,40}?' + connect +
+                r'\s+(?:the\s+|a\s+|an\s+)?(?P<b>' + syn_alt + r')\b', text):
+            _add(m.group('a'), m.group('b'), 'required')
+
+        # "A with (an) attached B" / "A with ensuite B"
+        for m in re.finditer(
+                r'\b(?P<a>' + syn_alt + r')\b[^.;,]{0,40}?with\s+(?:an?\s+)?'
+                r'(?:attached|ensuite|en-suite|adjoining)\s+(?P<b>' + syn_alt + r')\b', text):
+            _add(m.group('a'), m.group('b'), 'required')
+
+        # "open-plan A and B" / "combined A and B"
+        for m in re.finditer(
+                r'(?:open[-\s]plan|combined)\s+(?P<a>' + syn_alt + r')\s+and\s+'
+                r'(?P<b>' + syn_alt + r')\b', text):
+            _add(m.group('a'), m.group('b'), 'required')
+
+        # avoid-phrases
+        for m in re.finditer(
+                r'\b(?P<a>' + syn_alt + r')\b[^.;,]{0,40}?' + avoid +
+                r'\s+(?:the\s+|a\s+|an\s+)?(?P<b>' + syn_alt + r')\b', text):
+            _add(m.group('a'), m.group('b'), 'avoid')
+
+        return pairs
+
     @staticmethod
     def _area_after(text: str, pos: int) -> Optional[tuple]:
         """Find an explicit area spec just after a room mention, e.g. '(40 sqm)',
@@ -732,21 +813,7 @@ Extract all spatial information and return as JSON."""
         num_alt = '|'.join(self._WORD_NUM.keys())
         qual = r'(?:master|guest|shared|ensuite|en-suite|main|primary|family|kids?|children\'?s?|junior|powder)'
 
-        # (synonym regex, canonical type, (default_min, default_max), countable?)
-        LEXICON = [
-            (r'bedrooms?', 'bedroom', (12.0, 16.0), True),
-            (r'bathrooms?', 'bathroom', (4.0, 8.0), True),
-            (r'powder\s*rooms?|toilets?|\bwc\b|water\s*closets?', 'toilet', (2.0, 4.0), True),
-            (r'kitchens?', 'kitchen', (14.0, 18.0), False),
-            (r'living(?:\s*/?\s*dining)?(?:\s*(?:rooms?|areas?))?|great\s*rooms?|lounges?',
-             'living_room', (30.0, 45.0), False),
-            (r'dining(?:\s*(?:rooms?|areas?))?', 'dining', (10.0, 16.0), False),
-            (r'home\s*offices?|offices?|stud(?:y|ies)|studios?', 'office', (10.0, 14.0), False),
-            (r'laundr(?:y|ies)|utility(?:\s*rooms?)?', 'laundry', (4.0, 10.0), False),
-            (r'mud\s*rooms?', 'mudroom', (4.0, 8.0), False),
-            (r'garages?', 'garage', (18.0, 40.0), False),
-            (r'store\s*rooms?|storages?|pantr(?:y|ies)|closets?', 'storage', (4.0, 12.0), False),
-        ]
+        LEXICON = self._LEXICON
 
         def add_room(rtype, area):
             lo, hi = area
@@ -790,9 +857,16 @@ Extract all spatial information and return as JSON."""
             logger.warning("Fallback parser found no rooms - adding default living room")
             add_room('living_room', (15.0, 25.0))
 
+        # Adjacency requirements (the L in FBSL) — extracted from connective
+        # phrases so the layout stage has real requirements to satisfy.
+        present = {r['type'] for r in parsed['rooms']}
+        parsed['adjacencies'] = self._extract_adjacencies(text, present)
+
         logger.info(
             f"  ✓ Fallback parser extracted {len(parsed['rooms'])} rooms: "
-            f"{[r['type'] for r in parsed['rooms']]}"
+            f"{[r['type'] for r in parsed['rooms']]}; "
+            f"{len(parsed['adjacencies'])} adjacencies: "
+            f"{[(a['room1'], a['room2'], a['type']) for a in parsed['adjacencies']]}"
         )
         return parsed
     

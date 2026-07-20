@@ -377,12 +377,16 @@ class Layout:
             else:
                 self.circulation_efficiency = max(0, 1 - (circ_ratio - 0.25) * 2)
         
-        # Adjacency satisfaction
-        if self.adjacency_matrix is not None and self.actual_adjacency_matrix is not None:
-            required = np.sum(self.adjacency_matrix > 0.5)
-            satisfied = np.sum((self.adjacency_matrix > 0.5) & 
-                             (self.actual_adjacency_matrix > 0.5))
-            self.adjacency_satisfaction_score = satisfied / max(1, required)
+        # Adjacency satisfaction. When the layout agent has measured
+        # satisfaction against the BRIEF's stated requirements
+        # (metadata['adjacency_measured']), keep that — the weighted
+        # preference matrix below is a heuristic, not the brief.
+        if not (self.metadata or {}).get('adjacency_measured'):
+            if self.adjacency_matrix is not None and self.actual_adjacency_matrix is not None:
+                required = np.sum(self.adjacency_matrix > 0.5)
+                satisfied = np.sum((self.adjacency_matrix > 0.5) &
+                                 (self.actual_adjacency_matrix > 0.5))
+                self.adjacency_satisfaction_score = satisfied / max(1, required)
         
         # Compactness (using isoperimetric quotient)
         if self.boundary:
@@ -392,10 +396,17 @@ class Layout:
                 self.compactness_score = (4 * np.pi * area) / (perimeter ** 2)
     
     def to_dict(self) -> Dict[str, Any]:
+        # Room order for interpreting the adjacency matrices' rows/columns
+        room_order = list(self.rooms.keys())
+        adj = self.adjacency_matrix
+        actual_adj = self.actual_adjacency_matrix
         return {
             'layout_id': self.layout_id,
             'configuration_name': self.configuration_name,
             'rooms': {k: v.to_dict() for k, v in self.rooms.items()},
+            'room_order': room_order,
+            'adjacency_matrix': adj.tolist() if adj is not None else None,
+            'actual_adjacency_matrix': actual_adj.tolist() if actual_adj is not None else None,
             'total_area': self.total_area,
             'used_area': self.used_area,
             'circulation_area': self.circulation_area,

@@ -702,6 +702,11 @@ class PipelineOrchestrator:
                 'designs': [
                         {
                             'node_id': d['node'].node_id,
+                            # ✅ Complete FBSL representation stored with every
+                            # prototype: Functions, Behaviors, Structures, and
+                            # Layout with room coordinates, dimensions, and
+                            # required/actual adjacency (matrices + per-room).
+                            'fbsl': d['node'].to_dict(),
                             'variant_type': d['node'].metadata.get('variant_type', 'N/A'),
                             'description': d['node'].metadata.get('description', 'N/A'),
                             'scores': d['scores']['scores'],
