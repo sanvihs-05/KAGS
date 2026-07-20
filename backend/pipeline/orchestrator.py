@@ -26,6 +26,9 @@ from ..agents.refinement_agent import RefinementAgent
 from ..agents.layout_agent import LayoutGenerationAgent
 from ..core.behavior_calculator import BehaviorCalculator
 from ..core.brief_validator import BriefValidator
+from ..core.design_signature import (
+    design_signature, dedupe_by_signature, diversity_greedy_order,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -348,11 +351,15 @@ class PipelineOrchestrator:
                         stats.get('total_nodes', adaptive_params['target_prototypes'])
                     )
 
+                # Collect ALL leaves, not the first-N "best paths": before any
+                # node is scored, every edge carries the same default quality,
+                # so path ranking is arbitrary generation order — it silently
+                # dropped the geometry variants generated last.
                 best_paths = self.got_engine.find_best_paths(
                     problem_node.node_id,
-                    top_k=top_k
+                    top_k=max(top_k * 4, 64)
                 )
-                
+
                 alternatives = []
                 seen_nodes = set()
                 for path in best_paths:
@@ -360,7 +367,30 @@ class PipelineOrchestrator:
                     if leaf_id not in seen_nodes:
                         alternatives.append(self.got_engine.node_registry[leaf_id])
                         seen_nodes.add(leaf_id)
-                logger.info(f"   ✓ Selected {len(alternatives)} alternatives from best paths")
+                logger.info(f"   ✓ Collected {len(alternatives)} leaf candidates")
+
+                # ✅ DEDUP CLONES: many GoT leaves differ only in labels
+                # (priority_focus of a priority_focus, re-relaxed tolerances…)
+                # while sharing every physics/geometry parameter. Identical
+                # designs would earn identical scores and fill the whole
+                # ranking with copies — collapse them before scoring.
+                before = len(alternatives)
+                alternatives = dedupe_by_signature(alternatives)
+                if len(alternatives) < before:
+                    logger.info(
+                        f"   ✓ Collapsed {before - len(alternatives)} clone designs "
+                        f"→ {len(alternatives)} distinct candidates"
+                    )
+
+                # ✅ DIVERSITY-GREEDY CANDIDATE SELECTION: cap the pool for the
+                # expensive scoring/convergence stages while guaranteeing that
+                # every strategy family and footprint class is represented.
+                if len(alternatives) > top_k:
+                    alternatives = diversity_greedy_order(alternatives)[:top_k]
+                    logger.info(
+                        f"   ✓ Selected {len(alternatives)} diverse candidates "
+                        f"for scoring"
+                    )
 
                 # ✅ SCORE-BASED: Score all alternatives first, then prune low-scoring ones
                 logger.info("   📊 Scoring alternatives for adaptive pruning...")
@@ -403,36 +433,53 @@ class PipelineOrchestrator:
                 
                 logger.info(f"   ✓ Scored {len(alternatives)} alternatives (top score: {scored_alternatives[0][1]:.3f})")
                 
-                # ✅ SCORE-BASED PRUNING: Prune low-scoring alternatives
-                if len(alternatives) > adaptive_params['target_prototypes']:
-                    # Calculate score threshold: keep top N or those above median
-                    median_score = scored_alternatives[len(scored_alternatives) // 2][1]
-                    top_score = scored_alternatives[0][1]
-                    
-                    # Keep top target_count OR those within 20% of top score
-                    score_threshold = max(
-                        scored_alternatives[adaptive_params['target_prototypes'] - 1][1],
-                        top_score * 0.8  # Keep alternatives within 80% of best
-                    )
-                    
-                    pruned = [alt for alt, score in scored_alternatives if score >= score_threshold]
-                    
-                    # If still too many, take top target_count
-                    if len(pruned) > adaptive_params['target_prototypes']:
-                        pruned = [alt for alt, _ in scored_alternatives[:adaptive_params['target_prototypes']]]
-                    
-                    alternatives = pruned
+                # ✅ PRUNING (threshold = max_score × 0.70) + DIVERSITY:
+                # brief-violating designs (score 0.0) and weak designs below
+                # 70% of the best are dropped; among the survivors we keep the
+                # best of each distinct signature before admitting a second
+                # copy of any. (The old flat "within 80% of top" cutoff undid
+                # variant exploration — an honest linear/natural-vent design at
+                # 0.75 vs the compact 0.906 was pruned every time, leaving only
+                # clones of one design.)
+                top_score = scored_alternatives[0][1] if scored_alternatives else 0.0
+                prune_threshold = top_score * 0.70
+                valid = [
+                    alt for alt, score in scored_alternatives
+                    if score > 0.0 and score >= prune_threshold
+                ]
+                n_pruned = sum(1 for _, s in scored_alternatives if s <= 0.0 or s < prune_threshold)
+                if n_pruned:
                     logger.info(
-                        f"   ✓ Pruned low-scoring alternatives: "
-                        f"{len(scored_alternatives)} → {len(alternatives)} "
-                        f"(threshold: {score_threshold:.3f})"
+                        f"   ✂ Pruned {n_pruned} nodes below threshold "
+                        f"{prune_threshold:.3f} (= 0.70 × {top_score:.3f})"
                     )
+                target_n = adaptive_params['target_prototypes']
+                if len(valid) > target_n:
+                    distinct = dedupe_by_signature(valid)  # best-first order kept
+                    if len(distinct) >= target_n:
+                        alternatives = distinct[:target_n]
+                    else:
+                        # Fewer distinct designs than slots: fill with next-best
+                        chosen_ids = {id(a) for a in distinct}
+                        fill = [a for a in valid if id(a) not in chosen_ids]
+                        alternatives = distinct + fill[:target_n - len(distinct)]
+                    logger.info(
+                        f"   ✓ Pruned: {len(scored_alternatives)} scored → "
+                        f"{len(alternatives)} kept "
+                        f"({len(dedupe_by_signature(alternatives))} distinct designs)"
+                    )
+                else:
+                    alternatives = valid if valid else alternatives
 
                 # ✅ SCORE-BASED AGGREGATION: Aggregate high-scoring alternatives together
                 try:
                     if len(alternatives) > 1:
                         top_score = alternatives[0].composite_score
-                        high_score_threshold = top_score * 0.9
+                        # 0.75: with real variant physics, a genuinely different
+                        # design (linear, natural-vent) scores meaningfully lower
+                        # than the compact winner. 0.9 only ever matched clones,
+                        # making aggregation a merge of a design with itself.
+                        high_score_threshold = top_score * 0.75
 
                         high_scoring = [
                             alt for alt in alternatives
@@ -441,7 +488,14 @@ class PipelineOrchestrator:
 
                         high_scoring = high_scoring[:min(5, len(high_scoring))]
 
-                        if len(high_scoring) >= 2:
+                        # Aggregating identical designs produces the same design
+                        # back — require at least two DISTINCT ones to merge.
+                        if len(dedupe_by_signature(high_scoring)) < 2:
+                            logger.info(
+                                "   → Aggregation skipped: high-scoring candidates "
+                                "are the same design"
+                            )
+                        elif len(high_scoring) >= 2:
                             high_score_ids = [n.node_id for n in high_scoring]
                             sel_metric = request.get('got_selection_metric', self.got_selection_metric)
                             comp_thresh = request.get('got_compatibility_threshold', 0.0)
@@ -478,6 +532,13 @@ class PipelineOrchestrator:
                                     )
                                     aggregated.composite_score = 0.0
 
+                            aggregated.metadata['variant_type'] = 'aggregated_hybrid'
+                            aggregated.metadata['description'] = (
+                                'Hybrid of: ' + '; '.join(
+                                    n.metadata.get('variant_type', n.node_id[:8])
+                                    for n in high_scoring
+                                )
+                            )
                             alternatives.insert(0, aggregated)
                             score_list = [f"{n.composite_score:.3f}" for n in high_scoring]
                             logger.info(
@@ -558,6 +619,17 @@ class PipelineOrchestrator:
             
             # Sort by composite score
             scored_designs.sort(key=lambda x: x['scores']['scores']['composite'], reverse=True)
+
+            # ✅ DIVERSITY-FIRST RANKING: greedily surface the most novel
+            # design (new strategy family / footprint class / signature) at
+            # each position, best score first within ties. #1 is still the
+            # best design overall, but #2/#3 become the best DIFFERENT
+            # designs — e.g. compact winner, then the best linear, then the
+            # best performance-focused — not three copies of the winner.
+            scored_designs = diversity_greedy_order(
+                scored_designs, key=lambda d: d['node']
+            )
+            logger.info("   ✓ Final ranking: diversity-greedy ordering applied")
             
             # Get Pareto-optimal solutions
             pareto_solutions = pareto_front.get_best_solutions(top_k=len(alternatives))
