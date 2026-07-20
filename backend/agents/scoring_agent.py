@@ -322,7 +322,13 @@ class ScoringAgent:
         # Extract metrics with reasonable defaults (not 0.0)
         # If metrics aren't calculated, assume reasonable defaults rather than 0.0
         space_util = float(getattr(layout, 'space_utilization_ratio', None) or 0.7)  # Default 70% utilization
-        circ_eff = float(getattr(layout, 'circulation_efficiency', None) or 0.8)  # Default 80% efficiency
+        # ✅ Circulation: trust the measured room-graph value (including a
+        # genuine 0.0); the 0.8 default only covers layouts never placed.
+        _circ_raw = getattr(layout, 'circulation_efficiency', None)
+        if (getattr(layout, 'metadata', None) or {}).get('circulation_measured'):
+            circ_eff = float(_circ_raw if _circ_raw is not None else 0.0)
+        else:
+            circ_eff = float(_circ_raw or 0.8)  # Default 80% efficiency
         # ✅ Adjacency: when the layout agent MEASURED satisfaction against the
         # brief's requirements, trust it — including a genuine 0.0. The 0.6
         # default only applies to layouts that never went through placement

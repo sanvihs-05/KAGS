@@ -155,10 +155,32 @@ class LayoutGenerationAgent:
         # Step 1: Calculate room areas from functions
         room_specs = self._calculate_room_specifications(node)
         logger.info(f"  → Room specifications calculated: {len(room_specs)} rooms")
-        
+
+        # ✅ Populate Room.required_adjacencies from the brief BEFORE building
+        # the weighted matrix below — _build_adjacency_matrix reads exactly
+        # this field (via extract_adjacency_from_fbsl). Doing this after
+        # placement (as before) left every room's required_adjacencies empty
+        # at matrix-build time, so the matrix was always all-zero, the
+        # `weight > 0.3` gate in circulation never fired, and NO circulation
+        # paths were ever attempted — independent of the A* obstacle bug.
+        required_pairs = self._brief_required_pairs(node)
+        if required_pairs:
+            type_rooms: Dict[str, List[str]] = {}
+            for rid, room in node.layout.rooms.items():
+                type_rooms.setdefault((room.room_type or '').lower(), []).append(rid)
+            for t1, t2, kind in required_pairs:
+                if kind != 'required':
+                    continue
+                for r1 in type_rooms.get(t1, []):
+                    for r2 in type_rooms.get(t2, []):
+                        room1 = node.layout.rooms[r1]
+                        if r2 not in room1.required_adjacencies:
+                            room1.required_adjacencies.append(r2)
+
         # Step 2: Build weighted adjacency matrix
         adjacency_matrix = self._build_adjacency_matrix(node.layout.rooms)
-        logger.info(f"  → Adjacency matrix built: shape={adjacency_matrix.shape}")
+        logger.info(f"  → Adjacency matrix built: shape={adjacency_matrix.shape}, "
+                    f"nonzero={int(np.count_nonzero(adjacency_matrix))}")
         
         # Step 3+4: Gap-free placement via zoned squarified treemap.
         # Replaces force-directed + SLSQP, which leave gaps by construction
@@ -174,7 +196,6 @@ class LayoutGenerationAgent:
             aspect = 1.2
         aspect = min(max(aspect, 0.4), 4.0)
 
-        required_pairs = self._brief_required_pairs(node)
         optimized_positions = self._squarified_treemap_placement(
             room_specs, node.layout.rooms, aspect=aspect,
             required_pairs=required_pairs
@@ -199,18 +220,6 @@ class LayoutGenerationAgent:
                 other for other, opos in optimized_positions.items()
                 if other != rid and self._rects_share_wall(pos, opos)
             ]
-        if required_pairs:
-            type_rooms: Dict[str, List[str]] = {}
-            for rid, room in node.layout.rooms.items():
-                type_rooms.setdefault((room.room_type or '').lower(), []).append(rid)
-            for t1, t2, kind in required_pairs:
-                if kind != 'required':
-                    continue
-                for r1 in type_rooms.get(t1, []):
-                    for r2 in type_rooms.get(t2, []):
-                        room1 = node.layout.rooms[r1]
-                        if r2 not in room1.required_adjacencies:
-                            room1.required_adjacencies.append(r2)
         
         # Step 6: Generate circulation paths using A* pathfinding
         circulation = self._generate_circulation(
@@ -931,41 +940,124 @@ class LayoutGenerationAgent:
         adjacency_matrix: np.ndarray,
         room_ids: List[str]
     ) -> List[CirculationPath]:
-        """Generate circulation paths using A* pathfinding"""
-        
+        """Generate circulation paths on the ROOM-CONNECTIVITY GRAPH.
+
+        On a gap-free tiled plan, free-space A* cannot work: every room is an
+        obstacle and both endpoints sit inside obstacles, so no path was ever
+        found and circulation_efficiency read 0.0 for every design. Movement
+        in a real house goes THROUGH rooms via doorways in shared walls — so
+        circulation is the shortest path on the graph whose edges connect
+        rooms sharing a wall long enough for a door (>= 0.7 m), weighted by
+        centroid distance. Adjacent pairs route directly (efficiency 1.0);
+        distant pairs pay for every detour, so compact vs linear plans now
+        earn genuinely different circulation scores.
+        """
+        if not room_polygons:
+            return []
+
+        DOOR_MIN = 0.7  # minimum shared-wall length for a doorway (m)
+
+        centroids: Dict[str, Tuple[float, float]] = {}
+        for rid in room_ids:
+            poly = room_polygons.get(rid)
+            if poly is not None:
+                centroids[rid] = (poly.centroid.x, poly.centroid.y)
+
+        def _dist(a: Tuple[float, float], b: Tuple[float, float]) -> float:
+            return float(np.hypot(b[0] - a[0], b[1] - a[1]))
+
+        G = nx.Graph()
+        G.add_nodes_from(centroids)
+        ids = [r for r in room_ids if r in centroids]
+        for i in range(len(ids)):
+            for j in range(i + 1, len(ids)):
+                pi, pj = room_polygons[ids[i]], room_polygons[ids[j]]
+                try:
+                    if pi.distance(pj) < 0.01:
+                        shared = pi.intersection(pj)
+                        if getattr(shared, 'length', 0.0) >= DOOR_MIN:
+                            G.add_edge(ids[i], ids[j],
+                                       weight=_dist(centroids[ids[i]], centroids[ids[j]]))
+                except Exception:
+                    continue
+
+        # ✅ All room pairs, not just weight > 0.3 preference pairs: the
+        # weighted preference matrix reflects "should be adjacent" (function/
+        # traffic/privacy scores), which is near-universally zero when the
+        # brief states few explicit adjacencies — gating on it starved
+        # circulation down to 0 paths regardless of the graph fix above.
+        # Walkability of the WHOLE plan is what S_l's circulation term means.
+        circulation_paths = []
+        n = len(room_ids)
+        for i in range(n):
+            for j in range(i + 1, n):
+                room1_id, room2_id = room_ids[i], room_ids[j]
+                if room1_id not in centroids or room2_id not in centroids:
+                    continue
+                try:
+                    node_path = nx.shortest_path(G, room1_id, room2_id, weight='weight')
+                    pts = [centroids[r] for r in node_path]
+                    length = sum(_dist(pts[k], pts[k + 1]) for k in range(len(pts) - 1))
+                    circulation_paths.append(CirculationPath(
+                        start_room=room1_id,
+                        end_room=room2_id,
+                        path_points=pts,
+                        length=length,
+                        cost=length,
+                        path_type='direct' if len(node_path) == 2 else 'corridor',
+                    ))
+                except (nx.NetworkXNoPath, nx.NodeNotFound):
+                    continue
+                except Exception as e:
+                        logger.debug(f"Circulation path {room1_id[:8]}→{room2_id[:8]} failed: {e}")
+                        continue
+
+        logger.info(f"  → Room-graph circulation: {len(circulation_paths)} paths "
+                    f"({G.number_of_edges()} door connections)")
+        return circulation_paths
+
+    def _generate_circulation_astar_legacy(
+        self,
+        room_polygons: Dict[str, Polygon],
+        adjacency_matrix: np.ndarray,
+        room_ids: List[str]
+    ) -> List[CirculationPath]:
+        """Legacy free-space A* circulation (kept for reference; unusable on
+        gap-free tiled plans because endpoints sit inside obstacles)."""
+
         if not room_polygons:
             return []
 
         circulation_paths = []
         n = len(room_ids)
-        
+
         all_bounds = [poly.bounds for poly in room_polygons.values()]
         min_x = min(b[0] for b in all_bounds)
         min_y = min(b[1] for b in all_bounds)
         max_x = max(b[2] for b in all_bounds)
         max_y = max(b[3] for b in all_bounds)
-        
+
         grid_bounds = (min_x - 2, min_y - 2, max_x + 2, max_y + 2)
-        
+
         obstacles = []
         for room_id, polygon in room_polygons.items():
             bounds = polygon.bounds
             obstacles.append((bounds[0], bounds[1], bounds[2] - bounds[0], bounds[3] - bounds[1]))
-        
+
         for i in range(n):
             for j in range(i + 1, n):
                 weight = adjacency_matrix[i, j]
-                
+
                 if weight > 0.3:
                     room1_id = room_ids[i]
                     room2_id = room_ids[j]
-                    
+
                     poly1 = room_polygons[room1_id]
                     poly2 = room_polygons[room2_id]
-                    
+
                     start = (poly1.centroid.x, poly1.centroid.y)
                     goal = (poly2.centroid.x, poly2.centroid.y)
-                    
+
                     try:
                         path = self.pathfinder.find_path(
                             start=start,
@@ -1141,6 +1233,10 @@ class LayoutGenerationAgent:
         layout.circulation_efficiency = calculate_circulation_efficiency(
             circulation, room_positions
         )
+        if circulation:
+            # Mark as measured so calculate_metrics() keeps the path-ratio
+            # value instead of overwriting it with the corridor-area proxy.
+            layout.metadata['circulation_measured'] = True
         layout.compactness_score = calculate_compactness_score(room_positions)
         layout.space_utilization_ratio = used_area / max(total_area, 1.0)
         

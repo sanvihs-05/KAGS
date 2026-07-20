@@ -366,16 +366,19 @@ class Layout:
         if self.total_area > 0:
             self.space_utilization_ratio = self.used_area / self.total_area
         
-        # Circulation efficiency
-        if self.used_area > 0:
-            circ_ratio = self.circulation_area / self.used_area
-            # Optimal is 15-25%
-            if 0.15 <= circ_ratio <= 0.25:
-                self.circulation_efficiency = 1.0
-            elif circ_ratio < 0.15:
-                self.circulation_efficiency = circ_ratio / 0.15
-            else:
-                self.circulation_efficiency = max(0, 1 - (circ_ratio - 0.25) * 2)
+        # Circulation efficiency. When the layout agent MEASURED it on the
+        # room-connectivity graph (direct/actual path ratio — the honest
+        # definition), keep that; the corridor-area ratio below is a proxy.
+        if not (self.metadata or {}).get('circulation_measured'):
+            if self.used_area > 0:
+                circ_ratio = self.circulation_area / self.used_area
+                # Optimal is 15-25%
+                if 0.15 <= circ_ratio <= 0.25:
+                    self.circulation_efficiency = 1.0
+                elif circ_ratio < 0.15:
+                    self.circulation_efficiency = circ_ratio / 0.15
+                else:
+                    self.circulation_efficiency = max(0, 1 - (circ_ratio - 0.25) * 2)
         
         # Adjacency satisfaction. When the layout agent has measured
         # satisfaction against the BRIEF's stated requirements
