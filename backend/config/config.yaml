@@ -30,11 +30,20 @@ vector_store:
       - architectural_context
 
 llm:
-  # Local Ollama model (working): llama3.1:8b
-  # To use Claude Haiku 4.5: set provider: anthropic, model: claude-haiku-4.5
-  # and install Anthropic SDK, then set ANTHROPIC_API_KEY environment variable.
-  provider: ollama
-  model: llama3.1:8b
+  # provider: auto (default) tries a cloud LLM first if a key is configured
+  # (GROQ_API_KEY, or KAGS_LLM_API_KEY for any OpenAI-compatible endpoint),
+  # then falls back to local Ollama. Set to 'ollama' or 'openai' to pin one
+  # provider with no fallback. All of this is overridable via env vars:
+  # KAGS_LLM_PROVIDER, KAGS_LLM_API_KEY, KAGS_LLM_BASE_URL, KAGS_LLM_MODEL,
+  # GROQ_API_KEY. See backend/agents/encoder_agent.py EncoderAgent.__init__.
+  #
+  # Local model: llama3.2 (3.2B) — measured faster than llama3.1:8b on
+  # VRAM-constrained GPUs (a laptop 4GB card partially CPU-offloads the 8B
+  # model, and swapping between differently-sized models costs 30s+ just to
+  # reload). Keep this the smallest installed model for the Ollama fallback
+  # path to stay responsive.
+  provider: auto
+  model: llama3.2:latest
   temperature: 0.3
   max_tokens: 4096
   base_url: http://localhost:11434

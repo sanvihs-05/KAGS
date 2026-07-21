@@ -54,50 +54,89 @@ class EncoderAgent:
         self.ollama_url = os.getenv('OLLAMA_BASE_URL') or llm_cfg.get('base_url') or llm_base_url
 
         # ── Provider selection ───────────────────────────────────────────
-        # KAGS_LLM_PROVIDER=openai switches encoding to ANY OpenAI-compatible
-        # chat-completions API (OpenAI, Groq, OpenRouter, Together, Gemini's
-        # /v1beta/openai endpoint...). Configure with:
-        #   KAGS_LLM_BASE_URL  e.g. https://api.groq.com/openai/v1
-        #   KAGS_LLM_API_KEY   your key
-        #   KAGS_LLM_MODEL     e.g. llama-3.3-70b-versatile
-        #   KAGS_LLM_TIMEOUT   seconds (default 60)
-        # Default remains local Ollama.
+        # Three modes via KAGS_LLM_PROVIDER:
+        #   'ollama'  — local only, no cloud attempt (old default behavior)
+        #   'openai'  — cloud only, any OpenAI-compatible chat-completions API
+        #               (OpenAI, Groq, OpenRouter, Together, Gemini's openai
+        #               endpoint...), no local fallback
+        #   'auto' / unset (DEFAULT) — try cloud first if a key is configured,
+        #               fall back to Ollama on any cloud failure (timeout,
+        #               connection error, bad response), fall back to the
+        #               rule-based parser only if BOTH fail. This matters on
+        #               VRAM-constrained hardware: measured on this machine,
+        #               a cold Ollama model swap alone took 38s before
+        #               generating a single token, blowing the old 60s
+        #               timeout — a fast cloud provider avoids that entirely
+        #               while Ollama stays available offline.
+        #
+        # Cloud config: KAGS_LLM_API_KEY, KAGS_LLM_BASE_URL, KAGS_LLM_MODEL.
+        # Convenience: GROQ_API_KEY alone (no KAGS_LLM_* needed) auto-targets
+        # Groq's free, fast (LPU) OpenAI-compatible endpoint.
         self.llm_provider = (
-            os.getenv('KAGS_LLM_PROVIDER') or llm_cfg.get('provider') or 'ollama'
+            os.getenv('KAGS_LLM_PROVIDER') or llm_cfg.get('provider') or 'auto'
         ).strip().lower()
-        self.openai_base_url = (
-            os.getenv('KAGS_LLM_BASE_URL') or llm_cfg.get('openai_base_url')
-            or 'https://api.openai.com/v1'
-        ).rstrip('/')
-        self.openai_api_key = os.getenv('KAGS_LLM_API_KEY') or llm_cfg.get('openai_api_key')
+
+        groq_key = os.getenv('GROQ_API_KEY')
+        generic_key = os.getenv('KAGS_LLM_API_KEY') or llm_cfg.get('openai_api_key')
+        if generic_key:
+            self.openai_api_key = generic_key
+            self.openai_base_url = (
+                os.getenv('KAGS_LLM_BASE_URL') or llm_cfg.get('openai_base_url')
+                or 'https://api.openai.com/v1'
+            ).rstrip('/')
+            default_cloud_model = llm_cfg.get('openai_model') or 'gpt-4o-mini'
+        elif groq_key:
+            self.openai_api_key = groq_key
+            self.openai_base_url = (
+                os.getenv('KAGS_LLM_BASE_URL') or 'https://api.groq.com/openai/v1'
+            ).rstrip('/')
+            default_cloud_model = 'llama-3.3-70b-versatile'
+        else:
+            self.openai_api_key = None
+            self.openai_base_url = (
+                os.getenv('KAGS_LLM_BASE_URL') or llm_cfg.get('openai_base_url')
+                or 'https://api.openai.com/v1'
+            ).rstrip('/')
+            default_cloud_model = llm_cfg.get('openai_model') or 'gpt-4o-mini'
+
+        self.cloud_model = os.getenv('KAGS_LLM_MODEL') or default_cloud_model
         try:
             self.llm_timeout = int(os.getenv('KAGS_LLM_TIMEOUT') or llm_cfg.get('timeout') or 60)
         except (TypeError, ValueError):
             self.llm_timeout = 60
+        try:
+            # Short: a cloud attempt should fail fast so auto mode still has
+            # budget left to try Ollama within the same request.
+            self.cloud_timeout = int(os.getenv('KAGS_LLM_CLOUD_TIMEOUT') or 20)
+        except (TypeError, ValueError):
+            self.cloud_timeout = 20
+
+        self.cloud_available = bool(self.openai_api_key)
+        if self.cloud_available:
+            logger.info(
+                f"✅ Cloud LLM configured: {self.openai_base_url} model={self.cloud_model}"
+            )
+        elif self.llm_provider == 'openai':
+            logger.warning(
+                "⚠️ KAGS_LLM_PROVIDER=openai but no API key set "
+                "(KAGS_LLM_API_KEY or GROQ_API_KEY) - falling back to rule-based parser"
+            )
 
         if self.llm_provider == 'openai':
-            openai_model = os.getenv('KAGS_LLM_MODEL') or llm_cfg.get('openai_model')
-            if openai_model:
-                self.llm_model = openai_model
-            self.llm_available = bool(self.openai_api_key)
-            if self.llm_available:
-                logger.info(
-                    f"✅ OpenAI-compatible LLM configured: {self.openai_base_url} "
-                    f"model={self.llm_model}"
-                )
-            else:
-                logger.warning(
-                    "⚠️ KAGS_LLM_PROVIDER=openai but KAGS_LLM_API_KEY is not set "
-                    "- falling back to rule-based parser"
-                )
-        else:
-            # Test LLM connection and auto-select preferred installed model (prefer gemma)
+            self.llm_available = self.cloud_available
+        elif self.llm_provider == 'ollama':
             self.llm_available = self._test_llm_connection()
-
             if self.llm_available:
                 logger.info(f"✅ Ollama LLM available. Using model {self.llm_model}")
             else:
                 logger.warning("⚠️ Ollama LLM not available - falling back to rule-based parser")
+        else:  # auto
+            ollama_ok = self._test_llm_connection()
+            self.llm_available = self.cloud_available or ollama_ok
+            if not self.cloud_available and ollama_ok:
+                logger.info(f"✅ Ollama LLM available (no cloud key set). Using model {self.llm_model}")
+            elif not self.llm_available:
+                logger.warning("⚠️ No LLM available (cloud or Ollama) - falling back to rule-based parser")
         
         if vector_store.finnish_embeddings:
             self.finnish_mapper = FinnishFBSLMapper(vector_store.finnish_embeddings)
@@ -291,8 +330,6 @@ Context: {json.dumps(context) if context else 'None'}
 
 Extract all spatial information and return as JSON."""
 
-        # If LLM not available, use fallback parser
-        # Allow forcing CLI usage and model via environment variables
         env_model = os.getenv('OLLAMA_MODEL') or os.getenv('LLM_MODEL')
         if env_model:
             self.llm_model = env_model
@@ -300,115 +337,112 @@ Extract all spatial information and return as JSON."""
 
         use_cli_force = os.getenv('OLLAMA_USE_CLI', '').lower() in ('1', 'true', 'yes')
 
-        if not self.llm_available and not use_cli_force:
-            logger.warning("LLM not available – using fallback parser")
-            return self._fallback_parse(user_input)
+        # ── Build the provider attempt chain ────────────────────────────
+        # 'openai'/'ollama' pin to a single provider (no fallback between
+        # them — an explicit choice should behave predictably for testing).
+        # Default 'auto' tries cloud first (fast, no VRAM contention) and
+        # falls back to Ollama on ANY cloud failure, so a flaky/rate-limited
+        # API never blocks a design that local Ollama could still produce.
+        if self.llm_provider == 'openai':
+            attempts = ['cloud']
+        elif self.llm_provider == 'ollama':
+            attempts = ['ollama']
+        else:
+            attempts = (['cloud'] if self.cloud_available else []) + ['ollama']
 
-        try:
-            logger.info(f"  → Calling LLM ({self.llm_provider}) via requests...")
-
-            # If forced to use CLI, run `ollama run <model>` directly
-            cli_exe = os.getenv('OLLAMA_CLI_PATH', 'ollama')
-            if self.llm_provider == 'openai':
-                headers = {
-                    'Authorization': f'Bearer {self.openai_api_key}',
-                    'Content-Type': 'application/json',
-                }
-                payload = {
-                    'model': self.llm_model,
-                    'messages': [
-                        {'role': 'system', 'content': system_prompt},
-                        {'role': 'user', 'content': user_prompt},
-                    ],
-                    'temperature': 0.1,
-                }
-                response = requests.post(
-                    f"{self.openai_base_url}/chat/completions",
-                    json=payload,
-                    headers=headers,
-                    timeout=self.llm_timeout,
-                )
-                if response.status_code != 200:
-                    raise RuntimeError(
-                        f"LLM API returned status {response.status_code}: {response.text[:400]}"
+        for kind in attempts:
+            try:
+                if kind == 'cloud':
+                    if not self.cloud_available:
+                        raise RuntimeError('no cloud API key configured')
+                    response_text = self._call_cloud_llm(system_prompt, user_prompt)
+                else:
+                    if not self.llm_available and not use_cli_force:
+                        raise RuntimeError('Ollama unavailable')
+                    response_text = self._call_ollama_llm(
+                        system_prompt, user_prompt, use_cli_force
                     )
-                response_text = response.json()['choices'][0]['message']['content']
-            elif use_cli_force:
-                try:
-                    # Some ollama CLI versions accept the prompt as a positional
-                    # argument rather than via a `--prompt` flag.
-                    cmd = [cli_exe, 'run', self.llm_model, f"{system_prompt}\n\n{user_prompt}"]
-                    proc = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=60)
-                    if proc.returncode != 0:
-                        raise RuntimeError(f"Ollama CLI failed: {proc.stderr[:400]}")
-                    response_text = proc.stdout
-                except FileNotFoundError:
-                    logger.error(f"Ollama CLI binary not found: {cli_exe}")
-                    logger.info("  → Falling back to rule-based parser...")
-                    return self._fallback_parse(user_input)
-                except Exception as e:
-                    # Try to decode binary stderr/stdout if present
-                    logger.error(f"Ollama CLI run failed: {e}")
-                    logger.info("  → Falling back to rule-based parser...")
-                    return self._fallback_parse(user_input)
-            else:
-                # ✅ FIXED: Use requests.post pattern from FBSL.py
-                payload = {
-                    "model": self.llm_model,
-                    "prompt": f"{system_prompt}\n\n{user_prompt}",
-                    "stream": False,
-                    "options": {
-                        "temperature": 0.1  # Low temperature for structured output
-                    }
-                }
-                response = requests.post(
-                    f"{self.ollama_url}/api/generate",
-                    json=payload,
-                    timeout=self.llm_timeout
+
+                spatial_program = self._extract_json_from_llm_response(response_text)
+                if not spatial_program or not spatial_program.get('rooms'):
+                    raise RuntimeError(
+                        f"empty/invalid JSON from {kind} LLM: {response_text[:300]!r}"
+                    )
+
+                spatial_program = self._validate_spatial_program(spatial_program)
+                logger.info(f"  ✓ {kind} LLM extracted {len(spatial_program['rooms'])} rooms")
+                logger.debug(f"     Rooms: {[r['name'] for r in spatial_program['rooms']]}")
+                return spatial_program
+
+            except Exception as e:
+                remaining = attempts[attempts.index(kind) + 1:]
+                logger.warning(
+                    f"  ✗ {kind} extraction failed: {e}"
+                    + (f" — trying {remaining[0]}" if remaining else "")
                 )
+                continue
 
-                if response.status_code != 200:
-                    raise RuntimeError(f"Ollama API returned status {response.status_code}: {response.text[:400]}")
+        logger.warning("  → All LLM providers failed - using rule-based fallback parser")
+        return self._fallback_parse(user_input)
 
-                response_data = response.json()
-                response_text = response_data.get("response", "")
-            
-            logger.info("  → LLM response received")
-            logger.debug(f"  → Raw LLM response: {response_text[:200]}...")
-            
-            # Extract JSON from response (handles markdown code blocks)
-            spatial_program = self._extract_json_from_llm_response(response_text)
-            
-            if not spatial_program or not spatial_program.get('rooms'):
-                logger.error("❌ LLM returned empty or invalid JSON!")
-                logger.error(f"   Response was: {response_text[:500]}")
-                logger.info("  → Falling back to rule-based parser...")
-                return self._fallback_parse(user_input)
-            
-            # Validate and normalize
-            spatial_program = self._validate_spatial_program(spatial_program)
-            
-            logger.info(f"  ✓ LLM successfully extracted {len(spatial_program['rooms'])} rooms")
-            logger.debug(f"     Rooms: {[r['name'] for r in spatial_program['rooms']]}")
-            return spatial_program
-            
-        except requests.exceptions.Timeout:
-            logger.error(f"❌ LLM request timed out after {self.llm_timeout} seconds")
-            logger.info("  → Falling back to rule-based parser...")
-            return self._fallback_parse(user_input)
-            
-        except requests.exceptions.ConnectionError as e:
-            logger.error(f"❌ Cannot connect to Ollama at {self.ollama_url}: {e}")
-            logger.info("  → Falling back to rule-based parser...")
-            return self._fallback_parse(user_input)
-            
-        except Exception as e:
-            logger.error(f"❌ LLM extraction failed with error: {e}")
-            logger.error(f"   Error type: {type(e).__name__}")
-            import traceback
-            logger.error(f"   Traceback: {traceback.format_exc()}")
-            logger.info("  → Falling back to rule-based parser...")
-            return self._fallback_parse(user_input)
+    def _call_cloud_llm(self, system_prompt: str, user_prompt: str) -> str:
+        """Call any OpenAI-compatible chat-completions endpoint. Raises on
+        any failure (timeout, connection error, non-200, malformed body) so
+        the caller's fallback chain can move to the next provider."""
+        headers = {
+            'Authorization': f'Bearer {self.openai_api_key}',
+            'Content-Type': 'application/json',
+        }
+        payload = {
+            'model': self.cloud_model,
+            'messages': [
+                {'role': 'system', 'content': system_prompt},
+                {'role': 'user', 'content': user_prompt},
+            ],
+            'temperature': 0.1,
+        }
+        response = requests.post(
+            f"{self.openai_base_url}/chat/completions",
+            json=payload,
+            headers=headers,
+            timeout=self.cloud_timeout,
+        )
+        if response.status_code != 200:
+            raise RuntimeError(
+                f"cloud LLM API returned status {response.status_code}: {response.text[:400]}"
+            )
+        return response.json()['choices'][0]['message']['content']
+
+    def _call_ollama_llm(self, system_prompt: str, user_prompt: str, use_cli_force: bool) -> str:
+        """Call local Ollama via HTTP (or CLI if forced). Raises on any
+        failure so the caller's fallback chain can proceed to the rule-based
+        parser."""
+        if use_cli_force:
+            cli_exe = os.getenv('OLLAMA_CLI_PATH', 'ollama')
+            try:
+                cmd = [cli_exe, 'run', self.llm_model, f"{system_prompt}\n\n{user_prompt}"]
+                proc = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8',
+                                      errors='replace', timeout=self.llm_timeout)
+                if proc.returncode != 0:
+                    raise RuntimeError(f"Ollama CLI failed: {proc.stderr[:400]}")
+                return proc.stdout
+            except FileNotFoundError:
+                raise RuntimeError(f"Ollama CLI binary not found: {cli_exe}")
+
+        payload = {
+            "model": self.llm_model,
+            "prompt": f"{system_prompt}\n\n{user_prompt}",
+            "stream": False,
+            "options": {"temperature": 0.1},
+        }
+        response = requests.post(
+            f"{self.ollama_url}/api/generate",
+            json=payload,
+            timeout=self.llm_timeout,
+        )
+        if response.status_code != 200:
+            raise RuntimeError(f"Ollama API returned status {response.status_code}: {response.text[:400]}")
+        return response.json().get("response", "")
     
     def _extract_json_from_llm_response(self, text: str) -> Dict:
         """Extract JSON from LLM response, handling markdown and other formatting"""
