@@ -461,9 +461,25 @@ Extract all spatial information and return as JSON."""
         
         return {}
     
+    # Sensible per-type area bands used when the LLM omits area_min/area_max
+    # for a room, or — as observed with Groq/llama-3.3 — returns a literal
+    # "area_min": 0 for rooms it wasn't given an explicit size for. dict.get()
+    # only applies its default when the key is ABSENT, so a literal 0 sailed
+    # straight through as a "valid" area, zeroing that room's area behavior
+    # (target_value=0) which then zeroed the ENTIRE geometric-mean S_b score
+    # for the whole design — one bad room took down every prototype.
+    _DEFAULT_AREA_BAND = {
+        'bedroom': (12.0, 16.0), 'bathroom': (4.0, 8.0), 'toilet': (2.0, 4.0),
+        'kitchen': (14.0, 18.0), 'living_room': (30.0, 45.0), 'dining': (10.0, 16.0),
+        'study': (10.0, 14.0), 'office': (10.0, 14.0), 'utility': (4.0, 10.0),
+        'laundry': (4.0, 10.0), 'mudroom': (4.0, 8.0), 'garage': (18.0, 40.0),
+        'storage': (4.0, 12.0), 'hallway': (3.0, 8.0), 'balcony': (4.0, 10.0),
+    }
+    _DEFAULT_AREA_FALLBACK = (10.0, 15.0)
+
     def _validate_spatial_program(self, program: Dict) -> Dict:
         """Validate and normalize spatial program from LLM"""
-        
+
         # Ensure required keys exist
         validated = {
             'rooms': program.get('rooms', []),
@@ -471,7 +487,7 @@ Extract all spatial information and return as JSON."""
             'constraints': program.get('constraints', []),
             'priorities': program.get('priorities', [])
         }
-        
+
         # Validate rooms
         valid_rooms = []
         for room in validated['rooms']:
@@ -482,15 +498,33 @@ Extract all spatial information and return as JSON."""
                 room_type = room_type.split('|')[0].split('/')[0].split('(')[0].strip()
                 # Remove trailing underscores
                 room_type = room_type.rstrip('_')
-                
-                # Ensure area values
-                area_min = float(room.get('area_min', 10.0))
-                area_max = float(room.get('area_max', area_min * 1.5))
-                
+
+                # ✅ Treat missing OR non-positive area as "not specified" and
+                # substitute a per-type default band, rather than trusting a
+                # literal 0/negative value from the LLM.
+                def _safe_float(v):
+                    try:
+                        f = float(v)
+                        return f if f > 0 else None
+                    except (TypeError, ValueError):
+                        return None
+                area_min = _safe_float(room.get('area_min'))
+                area_max = _safe_float(room.get('area_max'))
+                if area_min is None or area_max is None:
+                    lo, hi = self._DEFAULT_AREA_BAND.get(room_type, self._DEFAULT_AREA_FALLBACK)
+                    area_min = area_min if area_min is not None else lo
+                    area_max = area_max if area_max is not None else hi
+                    logger.info(
+                        f"  room '{room.get('name', room_type)}' had no usable area from "
+                        f"LLM -> defaulted to [{area_min}, {area_max}]"
+                    )
+                if area_max < area_min:
+                    area_max = area_min * 1.3
+
                 # Clean name too
                 name = room.get('name', room_type.replace('_', ' ').title())
                 name = name.split('|')[0].split('/')[0].split('(')[0].strip()
-                
+
                 valid_rooms.append({
                     'type': room_type,
                     'name': name,
@@ -661,8 +695,18 @@ Extract all spatial information and return as JSON."""
         layout.used_area = layout.total_area
         layout.calculate_metrics()
         
-        # Store adjacencies in metadata
-        node.metadata['required_adjacencies'] = program.get('adjacencies', [])
+        # ✅ Resolve adjacency room1/room2 labels to canonical room TYPES
+        # before storing. The LLM's own JSON schema asks for "room type" but
+        # in practice (observed with Groq/llama-3.3) it often echoes the
+        # descriptive NAME instead ("Master Bedroom", "Ensuite Bathroom").
+        # The layout agent's adjacency matcher groups rooms by room_type
+        # ('bedroom', 'bathroom'), so an unresolved "master bedroom" label
+        # never matches anything and every requirement silently reads as
+        # unsatisfied — not because the design failed, but because of a
+        # string mismatch between name-space and type-space.
+        node.metadata['required_adjacencies'] = self._resolve_adjacency_labels(
+            program.get('adjacencies', []), layout.rooms
+        )
         node.metadata['design_constraints'] = program.get('constraints', [])
         node.metadata['design_priorities'] = program.get('priorities', [])
         
@@ -682,6 +726,48 @@ Extract all spatial information and return as JSON."""
         
         return node
     
+    @staticmethod
+    def _resolve_adjacency_labels(raw_adjacencies: List[Dict], rooms: Dict) -> List[Dict]:
+        """Map each adjacency's room1/room2 (type OR descriptive name) to a
+        canonical room_type actually present in this design, so downstream
+        type-based matching (layout_agent._brief_required_pairs) can find it.
+        Drops any pair that can't be resolved rather than emitting a
+        guaranteed-unsatisfiable requirement.
+        """
+        types_present = {r.room_type.lower() for r in rooms.values() if r.room_type}
+        # name (lowercased) -> type, for exact-name lookups
+        name_to_type = {r.name.lower(): r.room_type.lower() for r in rooms.values() if r.name and r.room_type}
+
+        def resolve(label: str) -> Optional[str]:
+            if not label:
+                return None
+            label = label.lower().strip()
+            if label in types_present:
+                return label
+            if label in name_to_type:
+                return name_to_type[label]
+            # Substring match: a known type appearing inside a descriptive
+            # label ("ensuite bathroom" -> "bathroom"), longest match first
+            # so "living_room" wins over a bare "room".
+            for t in sorted(types_present, key=len, reverse=True):
+                if t.replace('_', ' ') in label or t in label:
+                    return t
+            return None
+
+        resolved = []
+        for a in raw_adjacencies:
+            if not isinstance(a, dict):
+                continue
+            t1 = resolve(str(a.get('room1', '')))
+            t2 = resolve(str(a.get('room2', '')))
+            if t1 and t2 and t1 != t2:
+                resolved.append({
+                    'room1': t1, 'room2': t2,
+                    'type': a.get('type', 'required'),
+                    'strength': a.get('strength', 'medium'),
+                })
+        return resolved
+
     def _get_function_category(self, room_type: str) -> FunctionCategory:
         """Map room type to function category"""
         mapping = {
