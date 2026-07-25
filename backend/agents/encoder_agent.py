@@ -296,7 +296,7 @@ Your task: Parse the text and return a JSON object with this EXACT structure:
 {
   "rooms": [
     {
-      "type": "bedroom|living_room|kitchen|bathroom|study|dining|utility|storage|hallway|balcony",
+      "type": "bedroom|living_room|kitchen|bathroom|toilet|dining|office|study|utility|laundry|mudroom|garage|storage|closet|entry|hallway|balcony|sauna",
       "name": "descriptive name (e.g., 'Master Bedroom', 'Child Bedroom')",
       "area_min": minimum area in sqm (number),
       "area_max": maximum area in sqm (number),
