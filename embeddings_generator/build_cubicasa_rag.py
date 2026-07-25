@@ -261,8 +261,50 @@ def build(cubicasa_dir: Path, out_dir: Path, variants: List[str], limit: Optiona
     with open(out_dir / "consolidated_metadata.json", "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False)
 
+    # 4b) Empirical adjacency prior (precedent knowledge for the Research Agent).
+    prior = compute_adjacency_prior(records)
+    with open(out_dir / "adjacency_prior.json", "w", encoding="utf-8") as f:
+        json.dump(prior, f, ensure_ascii=False, indent=2, sort_keys=True)
+    logger.info("Adjacency prior: %d room-type pairs -> adjacency_prior.json", len(prior))
+
     # 5) Report — so the area scale can be sanity-checked empirically.
     _report(records, emb, out_dir)
+
+
+def compute_adjacency_prior(records: List[Dict], min_support: int = 50) -> Dict:
+    """Aggregate the per-room `neighbors` into an empirical adjacency prior:
+    P(type_a adjacent type_b | a plan contains both types), over all plans.
+
+    This is the architectural knowledge precedents carry that a brief often
+    leaves unstated (kitchen↔dining, bedroom↔bathroom, sauna↔bathroom…). The
+    Research Agent uses it to fill adjacency gaps the brief didn't specify.
+    Only pairs with >= min_support co-occurring plans are kept (drop noise).
+    """
+    from collections import defaultdict, Counter
+    plans = defaultdict(list)
+    for r in records:
+        plans[r["plan_id"]].append((r["room_type"], r.get("neighbors") or []))
+
+    pair_adjacent = Counter()   # (a,b) -> #plans where an a and b share a wall
+    pair_present = Counter()    # (a,b) -> #plans containing both types
+    for rooms in plans.values():
+        present = sorted({rt for rt, _ in rooms})
+        for i, a in enumerate(present):
+            for b in present[i + 1:]:
+                pair_present[(a, b)] += 1
+        seen = set()
+        for rt, neigh in rooms:
+            for nb in neigh:
+                if rt != nb:
+                    seen.add(tuple(sorted((rt, nb))))
+        for pr in seen:
+            pair_adjacent[pr] += 1
+
+    prior = {}
+    for pair, both in pair_present.items():
+        if both >= min_support:
+            prior[f"{pair[0]}|{pair[1]}"] = round(pair_adjacent.get(pair, 0) / both, 3)
+    return prior
 
 
 def _report(records: List[Dict], emb: np.ndarray, out_dir: Path) -> None:

@@ -14,9 +14,69 @@ logger = logging.getLogger(__name__)
 class ResearchAgent:
     """Research Agent: Knowledge retrieval and enhancement"""
     
+    # Precedent adjacency is applied only above this probability, and only to
+    # fill pairs the brief did not state (never overrides brief requirements).
+    ADJACENCY_PRIOR_THRESHOLD = 0.60
+
     def __init__(self, vector_store: VectorStoreManager):
         self.vector_store = vector_store
-        logger.info("✓ Research Agent initialized")
+        self._adjacency_prior = self._load_adjacency_prior()
+        logger.info(
+            f"✓ Research Agent initialized "
+            f"({len(self._adjacency_prior)} precedent adjacency pairs loaded)"
+        )
+
+    def _load_adjacency_prior(self) -> Dict[str, float]:
+        """Load the empirical adjacency prior (P(a-b adjacent | both present))
+        built from the CubiCasa corpus by build_cubicasa_rag.py. Missing file
+        -> empty dict -> feature is simply inactive (safe no-op)."""
+        import os, json as _json
+        path = getattr(self.vector_store, 'embeddings_path', None)
+        if not path:
+            return {}
+        f = os.path.join(path, 'adjacency_prior.json')
+        try:
+            with open(f, encoding='utf-8') as fh:
+                return _json.load(fh)
+        except Exception:
+            return {}
+
+    def suggest_precedent_adjacencies(self, node: FBSLLayoutNode) -> List[Dict]:
+        """Advisory precedent adjacencies: room-type pairs that co-occur
+        adjacent in real Finnish plans above the threshold but which the brief
+        did not state (kitchen↔dining, bedroom↔bathroom, sauna↔bathroom…).
+
+        These are surfaced as KNOWLEDGE in node.metadata['precedent_adjacencies']
+        for reporting and trade-off analysis — "real plans place these together"
+        — and are NOT consumed by layout placement. (Empirically the zoned
+        treemap already co-locates functionally related rooms, so feeding these
+        as soft placement preferences moved adjacency in only 1 of 3 vague-brief
+        tests and did nothing in the rest; the placement coupling was reverted
+        as not worth the complexity. The knowledge itself is reliable and
+        useful, so it is kept as advisory output.)"""
+        if not self._adjacency_prior or not node.layout or not node.layout.rooms:
+            return []
+
+        present = sorted({(r.room_type or '').lower()
+                          for r in node.layout.rooms.values() if r.room_type})
+        # pairs the brief already specifies (either direction) — never re-emit
+        brief_pairs = set()
+        for a in ((node.metadata or {}).get('required_adjacencies') or []):
+            if isinstance(a, dict):
+                t1 = str(a.get('room1', '')).lower(); t2 = str(a.get('room2', '')).lower()
+                brief_pairs.add(tuple(sorted((t1, t2))))
+
+        suggestions = []
+        for i, a in enumerate(present):
+            for b in present[i + 1:]:
+                key = f"{min(a, b)}|{max(a, b)}"
+                p = self._adjacency_prior.get(key, 0.0)
+                if p >= self.ADJACENCY_PRIOR_THRESHOLD and tuple(sorted((a, b))) not in brief_pairs:
+                    suggestions.append({
+                        'room1': a, 'room2': b, 'type': 'preferred',
+                        'source': 'precedent', 'probability': p,
+                    })
+        return suggestions
     
     def research_node(self, node: FBSLLayoutNode, depth: int = 3) -> Dict[str, Any]:
         """
@@ -217,5 +277,18 @@ class ResearchAgent:
             node.metadata['rag_areas_reconciled'] = n_adj
         except Exception as e:
             logger.warning(f"RAG area reconciliation skipped: {e}")
+
+        # ✅ Advisory precedent adjacencies (knowledge for reporting; NOT a
+        # placement driver — see suggest_precedent_adjacencies docstring).
+        try:
+            prefs = self.suggest_precedent_adjacencies(node)
+            node.metadata['precedent_adjacencies'] = prefs
+            if prefs:
+                logger.info(
+                    f"   ✓ Precedent adjacencies (advisory, unstated pairs): "
+                    f"{[(p['room1'], p['room2'], round(p['probability'], 2)) for p in prefs]}"
+                )
+        except Exception as e:
+            logger.warning(f"Precedent adjacency suggestion skipped: {e}")
 
         return node
