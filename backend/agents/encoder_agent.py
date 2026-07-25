@@ -221,7 +221,17 @@ class EncoderAgent:
         # Step 2: Create base FBSL node from extracted program
         logger.info("🗂️ Step 2: Creating FBSL node from spatial program...")
         node = self._create_node_from_spatial_program(spatial_program, user_input)
-        
+
+        # ✅ Honor the brief's STATED total floor area. The room program is
+        # extracted per-room and often sums below the stated total (e.g. rooms
+        # sum to 179 m² for a "210-250 sqm" brief), so without this the design
+        # silently under-delivers on the user's explicit size. Parse the stated
+        # total and scale the room program to fit within the band.
+        stated = self._parse_total_area(user_input)
+        if stated:
+            node.metadata['target_total_area'] = stated
+            self._fit_rooms_to_total(node, stated)
+
         # ✅ CRITICAL DEBUG: Check node immediately after creation
         if node.layout and node.layout.rooms:
             logger.info(f"✓ Node created with {len(node.layout.rooms)} rooms")
@@ -1031,6 +1041,66 @@ Extract all spatial information and return as JSON."""
         )
         return parsed
     
+    @staticmethod
+    def _parse_total_area(text: str) -> Optional[tuple]:
+        """Parse a stated TOTAL floor area from the brief, e.g. '210-250 sqm',
+        'within 250 sqm', 'total area of 220 m2'. Returns (min, max) or None.
+        Only matches phrases that clearly refer to the whole design (total /
+        overall / within / footprint / floor area) so it never picks up a
+        single-room area."""
+        t = text.lower()
+        unit = r'(?:sqm|sq\s*m|m2|m²|square\s*met(?:er|re)s?)'
+        cue = r'(?:total|overall|whole|entire|gross|footprint|floor\s*area|house|home|apartment|within|under|up\s*to|around|about|approximately)'
+        # range: "... 210-250 sqm"
+        m = re.search(cue + r'[^.\d]{0,30}?(\d{2,4}(?:\.\d+)?)\s*(?:-|to|–|and)\s*(\d{2,4}(?:\.\d+)?)\s*' + unit, t)
+        if m:
+            lo, hi = float(m.group(1)), float(m.group(2))
+            return (min(lo, hi), max(lo, hi))
+        # single: "... within 250 sqm" / "total area of 220 m2"
+        m = re.search(cue + r'[^.\d]{0,30}?(\d{2,4}(?:\.\d+)?)\s*' + unit, t)
+        if m:
+            v = float(m.group(1))
+            return (v * 0.95, v * 1.05)
+        return None
+
+    @staticmethod
+    def _fit_rooms_to_total(node: FBSLLayoutNode, band: tuple) -> None:
+        """Scale the room program so its total lands inside the stated band.
+        Targets the band MINIMUM (least inflation that satisfies the brief),
+        scaling each room proportionally but clamped to its function's
+        [min_area, max_area]. If the program cannot reach the band even at max
+        areas, rooms go to max and the shortfall is left (reported honestly)."""
+        if not node.layout or not node.layout.rooms:
+            return
+        rooms = list(node.layout.rooms.values())
+        net = sum(r.area for r in rooms)
+        lo, hi = band
+        if net >= lo:
+            return  # already within/above the stated minimum
+        target = lo
+        # per-room max from the linked function's spatial_requirements
+        def _max_for(r):
+            f = node.functions.get(getattr(r, 'function_id', None))
+            sr = getattr(f, 'spatial_requirements', None) if f else None
+            if sr and isinstance(sr, dict) and sr.get('max_area'):
+                return float(sr['max_area'])
+            return r.area * 1.4  # fallback cap
+        scale = target / max(net, 1e-9)
+        for r in rooms:
+            r.area = round(min(r.area * scale, _max_for(r)), 2)
+            if hasattr(r, 'calculate_volume'):
+                r.calculate_volume()
+        node.layout.total_area = sum(r.area for r in rooms)
+        node.layout.used_area = node.layout.total_area
+        # keep each function's area behavior target in step with the scaled room
+        for b in node.behaviors.values():
+            if 'area' in (b.metric_name or '').lower() and b.derived_from_function:
+                match = [r for r in rooms if r.function_id == b.derived_from_function]
+                if match:
+                    b.target_value = round(sum(m.area for m in match) / len(match), 2)
+        logger.info(f"  ✓ Fit room program to stated total: {net:.0f} → "
+                    f"{node.layout.total_area:.0f} m² (band {lo:.0f}-{hi:.0f})")
+
     def _add_constraints(self, node: FBSLLayoutNode, context: Dict[str, Any]):
         """Add constraints from context"""
         
