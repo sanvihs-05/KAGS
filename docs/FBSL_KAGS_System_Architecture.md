@@ -1,520 +1,675 @@
-# FBSL-KAGS: Multi-Agent System Architecture (Implementation Reference)
+# FBSL-KAGS — System Architecture and Design Reference
 
-**Status:** Reflects the *current, verified* codebase (`backend/`), not the original design spec.
-Every formula, threshold, and flow step below was read directly from source before writing.
-Where the running system now differs from the earlier architecture document, a
-**⚠ Changed from original spec** callout states the old value and why it changed.
-
-FBSL extends Gero's **Function–Behavior–Structure (FBS)** ontology with an explicit
-fourth layer — **Layout (L)** — carrying room coordinates, dimensions, and the
-adjacency graph. The pipeline transforms unstructured natural-language requirements
-into ranked, fully-specified floor-plan prototypes.
+A complete, implementation-faithful description of the FBSL-KAGS pipeline: a
+multi-agent system that turns a natural-language architectural brief into a set
+of ranked, fully-specified floor-plan prototypes. Every formula and parameter
+below is the one the code actually executes; each is stated together with the
+reason it takes that form and that value. A comparison with the project's
+original design is given once, at the end (§10).
 
 ---
 
-## 0. Reading Guide — What Changed Since the Original Spec
+## 1. Foundations: the FBSL ontology
 
-| Area | Original spec | Current implementation | Why |
-|---|---|---|---|
-| **Encoder LLM** | Ollama (gemma3/llama3.1) only | **Cloud-first chain**: Groq (or any OpenAI-compatible API) → Ollama → rule-based parser | Local 4 GB GPU couldn't fit models; 30–40 s reloads blew the 60 s timeout |
-| **Generalizer** | 4 variants (zoning/topology/priority/structural) | **5 named Level-1 strategies** with real parameter deltas, expanded inside GoT | Label-only variants scored identically; now each changes physics/geometry |
-| **Layout algorithm** | Force-directed particle simulation + A* on 0.5 m grid | **Zoned squarified treemap** (gap-free tiling) + **room-connectivity-graph** circulation | Force-directed leaves gaps by construction; free-space A* fails on a tiled plan |
-| **Compactness** | `Total_Room_Area / Bounding_Box_Area` | **`min(W,H) / max(W,H)`** of the footprint | Old formula is ≈1.0 for any gap-free plan; can't tell a square from a corridor |
-| **Circulation** | A* path length ratio on a grid | Shortest path on the **door-connectivity graph** (rooms sharing a ≥0.7 m wall) | Endpoints sit inside obstacles on a tiled plan; A* found no path → always 0.0 |
-| **S_l weights** | `0.4·Compact + 0.3·Circ + 0.3·Adj` (3 terms) | `0.30·SpaceUtil + 0.25·Circ + 0.30·Adj + 0.15·Compact` (4 terms) | Space utilisation added as an explicit term |
-| **Composite weights** | S_f .30 / S_b .30 / S_s .20 / S_l .15 / S_sust .05 | **S_f .25 / S_b .20 / S_s .20 / S_l .25 / S_sust .10** (normalised), `ρ = 1.0` | Layout weighted up now that L is real geometry |
-| **Aggregation trigger** | score ≥ max×0.9 AND compatibility > 0.7 | within **0.75×top** AND **≥ 2 distinct design signatures** | Merging clones just reproduces the same design |
-| **Adjacency satisfaction** | (implicit) | **Measured** on shared walls; a real 0.0 is kept, no 0.6 default | Old code hard-coded 0.6 "satisfaction" |
-| **FBSL persistence** | fields existed, unused | **L is generated and stored**: coordinates, dims, adjacency matrices in `fbsl_data.json` per prototype | The L layer was declared but never populated |
+FBSL extends **Gero's Function–Behavior–Structure (FBS)** ontology with an
+explicit fourth layer, **Layout (L)**.
+
+- **Function (F)** — *what the building must do*. One function per required room
+  (`provide_bedroom`, `provide_kitchen`…), each with a priority ∈ [0.5, 0.95],
+  a set of activities, and spatial requirements (min / preferred / max area).
+- **Behavior (B)** — *how it must perform*. Expected behaviors (Bₑ) are targets
+  (thermal 21 °C, daylight factor 3 %, acoustic STC 45, ventilation, area);
+  actual behaviors (Bₛ) are what the current design achieves, computed from
+  physics.
+- **Structure (S)** — *what it is built from*. Walls, partitions, glazing,
+  foundation, MEP — each with a material, dimensions, and a load-bearing flag.
+- **Layout (L)** — *where everything is*. Room coordinates, dimensions, the
+  adjacency graph, and circulation. This is the extension: classical FBS stops
+  at S, but a floor plan is meaningless without concrete geometry, so L is a
+  first-class layer carrying `position_vector`, room dimensions, and both the
+  required and achieved adjacency matrices.
+
+The pipeline is a transformation over these four layers: F → Bₑ (formulation),
+Bₑ → S (synthesis), S → Bₛ (analysis, via physics), S+L → geometry
+(realisation), and Bₑ ↔ Bₛ (evaluation), iterated until the design converges.
 
 ---
 
-## 1. Agents
+## 2. Agents
 
-### 1.1 Encoder Agent
+### 2.1 Encoder Agent
 
-**Role:** Entry point. Transforms raw natural-language requirements into an initial FBSL
-problem node (Functions, expected Behaviors, placeholder Structures, initial room list).
+**Role.** Convert raw brief text into an initial FBSL problem node.
 
-**Input:** e.g. *"Design a 3-bedroom compact urban home, master bedroom ~16 sqm with
-ensuite bathroom, open-plan kitchen and living room, mudroom connecting to the garage…"*
-
-**Output — initial FBSL problem node:**
-- **Functions (F):** one per room, with `priority ∈ [0.5, 0.95]`, activities, and
-  `spatial_requirements {min_area, max_area, preferred_area, orientation}`
-- **Expected Behaviors (Bₑ):** area behavior per room, plus lighting/ventilation/acoustic
-  behaviors derived from qualitative cues ("quiet" → acoustic, "natural light" → lighting)
-- **Initial Structures (S):** per-room partition + window (glazing ratio by room type),
-  plus node-level HVAC (MEP) and reinforced-concrete foundation
-- **Initial Layout (L):** room list with areas, no positions yet
-- **Metadata:** `required_adjacencies` (resolved to canonical room *types*)
-
-#### LLM Provider Chain ⚠ *Changed from original spec*
-
-Three modes via `KAGS_LLM_PROVIDER` (default `auto`):
+**LLM provider chain.** Extraction is attempted in a fixed order so that a fast,
+capable model is used when available but the system never hard-fails:
 
 ```
-auto:   cloud (if key present) → Ollama → rule-based parser
-openai: cloud only  (no fallback)
-ollama: local only  (no fallback)
+auto (default):  cloud LLM  →  local Ollama  →  rule-based parser
 ```
 
-- **Cloud:** any OpenAI-compatible `/chat/completions` endpoint. `GROQ_API_KEY` alone
-  auto-targets Groq (`llama-3.3-70b-versatile`, ~0.8 s/request). Configurable via
-  `KAGS_LLM_API_KEY`, `KAGS_LLM_BASE_URL`, `KAGS_LLM_MODEL`, `KAGS_LLM_CLOUD_TIMEOUT` (20 s).
-- **Ollama:** local `llama3.2` (default; smallest installed model for 4 GB GPUs).
-- **Rule-based parser:** deterministic regex/lexicon extractor; the guaranteed floor.
+- *Cloud* is any OpenAI-compatible chat endpoint. `GROQ_API_KEY` alone targets
+  Groq's `llama-3.3-70b-versatile`. **Why Groq/70B:** a 70-billion-parameter
+  model extracts room programs far more reliably than a small local model, and
+  Groq's LPU serving returns in ≈1 s, so the latency cost of a large model
+  disappears.
+- *Ollama* runs `llama3.2` locally. **Why the small 3B model as the local
+  tier:** on a 4 GB laptop GPU a larger model cannot fit and swapping models
+  costs 30–40 s; the small model is the only one that stays responsive offline.
+- *Rule-based parser* is deterministic and always succeeds — the guaranteed
+  floor.
 
-Any cloud failure (timeout, rate-limit, malformed JSON) transparently falls through to the
-next provider. `_call_cloud_llm` / `_call_ollama_llm` each raise on failure; a single
-attempt-chain loop orchestrates the fallback.
+Each cloud/Ollama call raises on any failure (timeout, rate-limit, malformed
+JSON) so the loop falls through cleanly. **Why a chain rather than one
+provider:** the local path is unreliable on constrained hardware and a cloud
+key may be absent or rate-limited; layering keeps extraction quality high when
+possible and functional always.
 
-#### Extraction post-processing (guards for real-LLM output)
+**Extraction robustness.** Two guards handle real-LLM output:
+- *Area sanitising* — a missing or non-positive `area_min/area_max` is replaced
+  with a per-room-type default band. **Why:** models sometimes emit a literal
+  `"area_min": 0`; because a zero-area room sets an area-behavior target of 0,
+  it would otherwise collapse the whole behavioral score.
+- *Adjacency label resolution* — each adjacency's endpoints (which a model often
+  returns as a descriptive *name*, e.g. "Master Bedroom") are mapped to a
+  canonical room *type* present in the design ("bedroom"). **Why:** the layout
+  agent groups rooms by type, so a name-space label would never match and every
+  requirement would read as unsatisfied.
 
-- **Area sanitising:** a missing *or* non-positive `area_min/area_max` is treated as
-  "unspecified" and replaced with a per-type default band. *(A literal `area_min: 0` from
-  the model would otherwise set an area behavior target of 0, which collapses the entire
-  geometric-mean S_b to 0.)*
-- **Adjacency label resolution:** each adjacency's `room1/room2` (which the LLM often
-  returns as a descriptive **name**, "Master Bedroom") is mapped to a canonical room
-  **type** present in the design ("bedroom") — exact-type, exact-name, then substring
-  match. Unresolvable pairs are dropped, never stored as guaranteed-unsatisfiable.
-- **Rule-based fallback** additionally extracts adjacencies from connective phrases
-  ("connected to", "attached", "open-plan X and Y", "separated from" → avoid).
+**Stated total area.** The brief's explicit total ("Total area 210–250 sqm",
+"within 250 sqm") is parsed — guarded by whole-design cue words so a single
+room's area is never mistaken for the total — and stored as
+`target_total_area`. If the extracted room program sums below the stated
+minimum, the rooms are scaled up proportionally to reach it, each clamped to its
+function's `max_area`. **Why:** rooms extracted individually sum to the *net*
+usable area, which is typically 15–20 % below the *gross* figure a client
+states; without this the design silently under-delivers on the requested size.
 
----
-
-### 1.2 Generalizer Agent → **5 Named Strategies (Level-1 GoT)** ⚠ *Changed from original spec*
-
-**Role:** Seed the design space with genuinely different starting points. In the current
-system this happens as **Level-1 expansion inside the Graph of Thoughts** (the standalone
-`GeneralizerAgent` still exists for the non-GoT path, but the GoT path — the default —
-uses the five named strategy seeds below). Each strategy changes parameters the physics
-and geometry actually read, so each earns a different score.
-
-| Strategy | `layout_aspect` | Real parameter delta |
-|---|---|---|
-| `functional_priority` | 1.5 | High-priority rooms scaled ×1.08, low-priority ×0.92 (area-neutral) |
-| `performance_optimized` | 1.1 | Glazing ×0.90 (thermal), partitions → 0.15 m (acoustic), keeps HVAC |
-| `structural_efficiency` | 1.35 | Rooms ×0.95, partitions → 0.08 m, non-load-bearing concrete → steel |
-| `spatial_compactness` | 1.05 | Near-square footprint, rooms ×0.97 |
-| `balanced` | 1.2 | Baseline parameters |
-
-All area scalings stay inside the brief validator's ±10 % total-area grace so a strategy is
-never auto-rejected for its emphasis.
-
-**Level-2+ micro-transformations** specialise each strategy (names compose, e.g.
-`spatial_compactness+linear_layout`):
-- **Layout permutation** → `compact` (1.05), `linear` (2.4), `courtyard` (0.6) aspects
-  (the parent's own aspect is skipped to avoid cloning it)
-- **Behavioral** → `relaxed_tolerances`; `natural_ventilation` (removes MEP, enlarges
-  glazing ×1.25 — a real S_b trade-off)
-- **Functional** → `priority_focus` (keep priority > 0.7 functions)
-- **Structural** → `alt_materials`
+**Output.** An FBSL problem node: one Function + area Behavior + partition and
+glazing Structures per room, node-level HVAC and foundation, an initial room
+list, and `required_adjacencies` (resolved to canonical types). Each Function
+also receives a 384-dim query embedding (see §2.2) so precedent retrieval can
+fire.
 
 ---
 
-### 1.3 Research Agent (External RAG)
+### 2.2 Research Agent (RAG over the CubiCasa5K corpus)
 
-**Role:** Retrieve precedent Finnish floor plans from the FAISS vector store to ground
-room sizing.
+**Role.** Ground the design in real precedent floor plans.
 
-**Query process:** encode FBSL context → L2-normalise → `IndexFlatIP` inner-product search
-(≡ cosine after normalisation) → map indices to metadata.
+**Corpus.** `cubicasa_rag_store` — one record per **room** (34,319 rooms from
+3,787 real Finnish plans), each `{plan_id, room_type, area_m², neighbors}`. The
+area is measured from the room polygon in each plan's SVG (shoelace area at
+CubiCasa's 100-units-per-metre scale). **Why room-level:** the pipeline reasons
+per room (a bedroom's typical size, what a kitchen sits next to), so the
+retrieval unit must be a room, not a whole plan or an annotation token.
+
+**Retrieval.** Each Function's query embedding (`"<type> of <area> square
+metres"`, encoded with `all-MiniLM-L6-v2`, 384-dim) is searched against a FAISS
+`IndexFlatIP` index:
 
 ```
 similarity(q, pᵢ) = cos(E(q), E(pᵢ)) = (q · pᵢ) / (‖q‖ · ‖pᵢ‖)
 ```
 
-**Retrieval thresholds by function priority:** High > 0.7, Medium > 0.5, Low > 0.3.
+**Why cosine / inner-product on L2-normalised vectors:** after normalisation the
+inner product equals cosine similarity, which measures semantic closeness
+independent of vector magnitude — the right notion for "which real rooms are
+like this one". **Why `IndexFlatIP` (exact) rather than an approximate index:**
+34 k vectors is small enough for exact search in milliseconds, so there is no
+reason to trade accuracy for speed.
 
-**Precedent reconciliation:** similarity-weighted blend of stated vs precedent area,
-`a* = λ·a_stated + (1−λ)·â_precedent` (λ = 0.6), clamped to each function's [min, max] band.
+**Area reconciliation.** For each room, the stated area is blended with a
+similarity-weighted precedent estimate and clamped to the brief band:
 
-**Store:** `cubicasa_rag_store` — a **room-level** index built from CubiCasa5K by
-`embeddings_generator/build_cubicasa_rag.py`. One record per room (34,319 rooms from 3,787
-real plans), each with `{plan_id, room_type, area_m², neighbors}`; the area comes from the
-room polygon (shoelace at CubiCasa's 100-units/metre scale). This replaced the legacy
-`enhanced_multimodal_rag_store`, which indexed 215k OCR annotation *tokens* under a single
-fake `plan_id` with no area — retrieval there returned nothing usable and reconciliation
-was a permanent no-op.
-
-**Verified working:** the Encoder attaches a query embedding to each Function
-(`"<type> of <area> square metres"`); retrieval returns real same-type, similar-area
-precedents (e.g. a 14 m² bedroom query → real bedrooms of 13.7–14.5 m²); reconciliation
-then moves room areas toward the precedents (e.g. dining 13.0 → 15.9 m², living 37.5 → 35.3
-m²) within the brief band. Two latent bugs were fixed to get here: a read-only-mmap segfault
-in the FAISS index build (only a float32 store triggered it) and a torch/faiss OpenMP
-runtime collision (`OMP: Error #15`).
-
-**Five embedding types** (composite fusion, primary retrieval vector):
 ```
-E_composite = 0.3·E_text + 0.4·E_arch + 0.2·E_spatial + 0.1·E_visual
+â_precedent = Σᵢ simᵢ · areaᵢ / Σᵢ simᵢ
+a*          = λ · a_stated + (1 − λ) · â_precedent        (λ = 0.6)
 ```
-Text (all-MiniLM-L6-v2), Architectural (domain features), Spatial (coordinates/adjacency),
-Visual (CLIP ViT-B/32).
+
+**Why a weighted blend:** the user's stated area should dominate (hence λ = 0.6,
+majority weight) but be nudged toward what real plans of that type actually use,
+so an under- or over-specified room is corrected toward realism. **Why
+similarity weighting:** more-similar precedents should count more. **Why
+clamped to the brief band:** grounding must never push a room outside the user's
+own constraints.
+
+**Adjacency prior (advisory).** Across all 3,787 plans the system computes, per
+room-type pair, `P(a adjacent b | both present)`. High-probability pairs the
+brief did not state (kitchen↔dining 0.96, sauna↔bathroom 0.94, bedroom↔bathroom
+0.57…) are recorded as advisory knowledge. **Why advisory only, not fed into
+placement:** the zoned layout already co-locates functionally related rooms, so
+injecting these as soft placement constraints was measured to change adjacency
+in only 1 of 3 tests — the knowledge is genuine and worth surfacing in reports,
+but acting on it added complexity for no reliable benefit.
 
 ---
 
-### 1.4 Scoring Agent (MCDA) ⚠ *Weights & several formulas changed*
+### 2.3 Design-Space Generation (Graph-of-Thoughts)
 
-**Role:** Evaluate every node across five dimensions, produce a composite ∈ [0, 1].
+**Role.** Explore genuinely different designs rather than converging on one.
 
-**Composite aggregation** — generalised power mean with compensation parameter `ρ`:
+**Level 1 — five named strategies.** The root node is expanded into five
+seeds, each changing parameters the physics and geometry actually read, so each
+earns a different score:
+
+| Strategy | Footprint aspect | Parameter change | Why |
+|---|---|---|---|
+| `functional_priority` | 1.5 | high-priority rooms ×1.08, low ×0.92 | serve the most important functions best |
+| `performance_optimized` | 1.1 | glazing ×0.90, partitions 0.15 m | favour thermal/acoustic performance |
+| `structural_efficiency` | 1.35 | rooms ×0.95, thin 0.08 m partitions, concrete→steel | minimise material |
+| `spatial_compactness` | 1.05 | near-square footprint, rooms ×0.97 | maximise compactness |
+| `balanced` | 1.2 | baseline | a neutral all-round design |
+
+**Why five distinct aspect ratios:** the footprint aspect drives the treemap, so
+giving each strategy its own aspect guarantees five geometrically different
+plans (and five different design signatures). All area scalings stay inside the
+validator's ±10 % grace so a strategy is never rejected merely for its emphasis.
+
+**Level 2+ — micro-transformations** specialise each strategy; names compose
+(e.g. `spatial_compactness+linear_layout`):
+- *Layout permutation* → compact (aspect 1.05), linear (2.4), courtyard (0.6).
+  **Why these three:** they span the meaningful footprint space — square,
+  elongated, and wrapped — and the parent's own aspect is skipped to avoid
+  producing a clone.
+- *Behavioral* → relaxed tolerances; **natural ventilation** (removes mechanical
+  MEP, enlarges glazing ×1.25) — a real physics trade-off.
+- *Functional* → keep only priority > 0.7 functions.
+- *Structural* → alternative materials.
+
+**Expansion order and stopping.** Children are interleaved round-robin across
+strategies (geometry-changing variants first) before the breadth cut, **so the
+variants that actually change the plan are never the ones truncated away.**
+Expansion never stops before depth 2 (every Level-1 strategy is fully expanded);
+after that it stops when improvement < 0.001 with score > 0.7 for `patience = 2`
+expansions, or when ≥ 3 high-scoring alternatives exist. **Why these criteria:**
+once several good, distinct designs exist, further search yields diminishing
+returns, and the depth-2 guard prevents the search from quitting before the
+design space is even built.
+
+**Deduplication.** A **design signature** fingerprints the physics/geometry
+parameters (aspect, ventilation strategy, mean glazing ratio, materials,
+room-type counts, area bucket). Leaves with identical signatures are collapsed
+before scoring. **Why:** many GoT paths differ only in labels while sharing every
+real parameter; without dedup the ranking fills with copies of one design.
+
+---
+
+### 2.4 Scoring Agent (Multi-Criteria Decision Analysis)
+
+**Role.** Score every node on five dimensions and combine them.
+
+**Composite aggregation.**
+
 ```
-S_composite = ( Σᵢ wᵢ · Sᵢ^ρ )^(1/ρ)          (ρ = 1.0 in the pipeline → weighted mean)
-   ρ = 0  →  weighted geometric mean  exp( Σ wᵢ · ln Sᵢ )
-   ρ < 1  →  anti-compensatory (penalises weak dimensions)
+S_composite = ( Σᵢ wᵢ · Sᵢ^ρ )^(1/ρ)          with ρ = 1
 ```
 
-**Current weights** (normalised to 1.0):
+**Why a generalised power mean:** the exponent ρ tunes how much a weak dimension
+can be compensated by strong ones. At ρ = 1 it is the weighted arithmetic mean
+(full compensation); at ρ = 0 it becomes the weighted geometric mean; at ρ < 1
+it becomes anti-compensatory (a weak dimension drags the whole score down). The
+pipeline runs ρ = 1 for a stable, interpretable weighted average, while keeping
+the machinery to harden it later.
 
-| Dimension | Weight |
-|---|---|
-| Functional Adequacy S_f | 0.25 |
-| Behavioral Performance S_b | 0.20 |
-| Structural Feasibility S_s | 0.20 |
-| Layout Efficiency S_l | 0.25 |
-| Sustainability S_sust | 0.10 |
+**Weights** (normalised to 1): S_f 0.25, S_b 0.20, S_s 0.20, S_l 0.25, S_sust
+0.10. **Why this split:** functional adequacy and layout efficiency are the two
+outcomes a client feels most directly, so they carry the most weight (0.25
+each); behavioral performance and structural feasibility are important but more
+of a floor than a differentiator (0.20 each); sustainability is a genuine but
+secondary criterion here (0.10).
 
-*(Original spec: 0.30 / 0.30 / 0.20 / 0.15 / 0.05 with a plain weighted sum. Layout was
-weighted up once L became real measured geometry.)*
+Both S_f and S_b score each behavior with a shared **performance function** that
+rewards *exceeding* the target, not merely meeting it:
 
-Both S_f and S_b score each behavior with **`perf(ratio)`**, which rewards
-*exceeding* the target within a bounded band (not just meeting it):
 ```
 ratio = B_actual / B_expected
-perf(ratio) = 0.85 · ratio                      if ratio ≤ 1   (deficient → 0, meets → 0.85)
-            = 0.85 + 0.15 · min(1, (ratio−1)/0.30)   if ratio > 1   (exceeds by 30% → 1.0)
+perf(ratio) = 0.85 · ratio                              if ratio ≤ 1
+            = 0.85 + 0.15 · min(1, (ratio − 1) / 0.30)  if ratio > 1
 ```
-The old `min(1, ratio)` flattened "meets target" and "far exceeds target" both
-to 1.0, discarding all performance above target — which pinned S_f and S_b at a
-constant 1.0 for every design. Now an excellent design (better insulation, more
-daylight, larger high-priority rooms) scores above one that merely satisfies the
-brief. (The behavior calculator was also uncapped — `performance_ratio` clamps
-to 2× instead of 1× — so `actual` carries true performance above target.)
 
-**1. Functional Adequacy (S_f)** — degree of satisfaction, not a binary count:
-```
-Coverage(fᵢ) = mean over related behaviors of  perf(B_actual / B_expected)
-S_f          = Σᵢ (priorityᵢ · Coverage(fᵢ)) / Σᵢ priorityᵢ
-```
-*(An area behavior compares a room's OWN area to its per-room target — a fixed
-bug summed the whole house against a per-room target, giving 12× ratios that
-falsely pinned S_f/S_b at 1.0.)*
+**Why this shape:** a design that just meets every target scores 0.85, leaving
+headroom (the top 0.15 band) to reward one that outperforms — reaching 1.0 at
+30 % above target. **Why 0.85 / 0.30:** meeting the brief should already be
+"good" (0.85, not a middling score), and 30 % over target is a realistic ceiling
+for "excellent" in building performance, beyond which extra margin is wasted.
+The behavior calculator is correspondingly uncapped (its performance ratio
+clamps at 2× rather than 1×) so `actual` genuinely carries performance above
+target. **Why this matters:** the old hard cap `min(1, ratio)` flattened
+"meets" and "far exceeds" both to 1.0, discarding the very information that
+distinguishes a good envelope from an adequate one.
 
-**2. Behavioral Performance (S_b)** — geometric mean, so one bad behavior sinks the score:
+**1. Functional Adequacy (S_f)** — degree to which functions are served:
+
+```
+Coverage(fᵢ) = mean over the function's behaviors of perf(B_actual / B_expected)
+S_f          = Σᵢ priorityᵢ · Coverage(fᵢ) / Σᵢ priorityᵢ
+```
+
+**Why priority-weighted:** a shortfall in a high-priority room (a bedroom) should
+hurt more than in a low-priority one (storage). An area behavior compares a
+room's own area to its per-room target (matched by function id, else by the room
+type in the metric name) — never the whole-house sum.
+
+**2. Behavioral Performance (S_b)** — geometric mean over all behaviors:
+
 ```
 S_b = exp( mean( ln( perf(B_actualᵢ / B_expectedᵢ) ) ) )
 ```
 
-**3. Structural Feasibility (S_s)** — real feasibility, not a constant (was: start
-1.0 × 0.7/0.8 for missing structure, i.e. always 1.0):
+**Why geometric, not arithmetic:** the geometric mean is dominated by its
+smallest term, so a single failing behavior (say daylight at 0.2) sinks the
+score — which is correct, because a house that is warm but pitch-dark is not
+"80 % good". An arithmetic mean would let strong behaviors mask a critical
+failure.
+
+**3. Structural Feasibility (S_s):**
+
 ```
 S_s = 0.35·MaterialValidity + 0.25·DimensionalFeasibility
     + 0.20·SpanFeasibility + 0.20·LoadPath
-
-MaterialValidity      = fraction of load-bearing elements using a structural
-                        material (a gypsum/glass load-bearing wall is penalised)
-DimensionalFeasibility = load-bearing thickness ≥ 0.15 m, foundation depth ≥ 0.6 m
-SpanFeasibility       = fraction of rooms whose short side ≤ 6 m max span (layout-coupled)
-LoadPath              = foundation + vertical support present
 ```
-It is a feasibility CHECK (uniform-high for feasible designs, drops for
-genuinely infeasible ones), not a quality gradient — unit-verified
-1.00 / 0.72 / 0.14 for feasible / marginal / infeasible.
 
-**4. Layout Efficiency (S_l)** ⚠ *4-term, new geometry formulas*:
+- *MaterialValidity* — fraction of load-bearing elements using a structural
+  material (concrete/steel/brick/wood/masonry); a gypsum or glass load-bearing
+  wall is penalised. **Why weighted highest (0.35):** using a material that
+  cannot carry load is the most fundamental feasibility failure.
+- *DimensionalFeasibility* — load-bearing thickness ≥ 0.15 m, foundation depth
+  ≥ 0.6 m. **Why these values:** standard minimums for a structural wall and a
+  frost-safe foundation.
+- *SpanFeasibility* — fraction of rooms whose shorter side ≤ 6 m. **Why 6 m and
+  the shorter side:** floor structure spans the short direction, and ~6 m is the
+  practical limit before intermediate support is needed; this makes S_s
+  layout-coupled.
+- *LoadPath* — a foundation plus vertical support must both be present.
+
+S_s is a *feasibility check*, not a quality gradient: it stays high for any sound
+design and drops sharply for an infeasible one (verified 1.00 / 0.72 / 0.14 for
+feasible / marginal / infeasible).
+
+**4. Layout Efficiency (S_l):**
+
 ```
 S_l = 0.30·SpaceUtilisation + 0.25·Circulation + 0.30·Adjacency + 0.15·Compactness
 
-Compactness = min(W, H) / max(W, H)                 of the footprint bbox   (was Area/Bbox)
-Circulation = mean( direct_dist / graph_path_dist ) over room-graph paths   (was A* on grid)
-Adjacency   = satisfied_requirements / total_requirements                   (measured, brief-derived)
-SpaceUtil   = used_area / total_area
+Compactness    = min(W, H) / max(W, H)   of the footprint bounding box
+Circulation    = mean( direct_distance / graph_path_distance ) over room pairs
+Adjacency      = satisfied_requirements / total_requirements
+SpaceUtilisation = used_area / total_area
 ```
-Measured `Circulation`/`Adjacency` values (flagged `*_measured` in layout metadata) are
-trusted verbatim, **including a genuine 0.0**; the old 0.8/0.6 defaults apply only to
-layouts that never went through placement.
 
-**5. Sustainability (S_sust)** — computed from the design's actual envelope physics and
-geometry (no longer a flat baseline):
+**Why compactness as footprint squareness** (`min/max`, not room-area ÷ box):
+for a gap-free tiled plan the area ratio is always ≈ 1 and cannot tell a square
+from a corridor; the aspect ratio of the bounding box does exactly that — 1.0
+for a square plan, → 0 for a long thin one — which is what "compact" means
+thermally and circulation-wise. **Why circulation as a path-ratio on the room
+graph:** movement in a house goes through doorways between rooms, so circulation
+is the shortest walk over the graph of wall-sharing rooms versus the straight-
+line distance; adjacent rooms score 1.0, distant rooms pay for every detour.
+**Why the 0.30/0.25/0.30/0.15 split:** adjacency and space utilisation are what
+make a plan livable (0.30 each), circulation efficiency slightly less (0.25),
+and compactness is a secondary shaping factor (0.15).
+
+**5. Sustainability (S_sust):**
+
 ```
 S_sust = 0.35·EnvelopeThermal + 0.25·FormFactor + 0.15·GlazingFit
        + 0.15·MaterialCarbon + 0.10·Passive
 
-EnvelopeThermal = clip((U_poor − mean_U) / (U_poor − U_good))   area-weighted envelope U
-FormFactor      = compactness  (min(W,H)/max(W,H) — compact plans lose less heat)
-GlazingFit      = 1.0 in the cold-climate optimum window ratio [0.12, 0.22], falling off outside
-MaterialCarbon  = 1 − area-weighted embodied-carbon (wood/timber low, concrete/steel high)
+EnvelopeThermal = clip( (U_poor − mean_U) / (U_poor − U_good) )   U_good 0.15, U_poor 1.20
+FormFactor      = compactness (min(W,H)/max(W,H))
+GlazingFit      = 1.0 inside the window-ratio optimum [0.12, 0.22], falling off outside
+MaterialCarbon  = 1 − area-weighted embodied carbon (wood low, concrete/steel high)
 Passive         = 1.0 for natural ventilation (no mechanical MEP), else 0.5
 ```
-Reuses the same material U-values as the BehaviorCalculator for consistency. Now
-**layout-coupled** — an elongated (linear) footprint earns a lower S_sust than a compact
-one. Verified live: five prototypes scored 0.523 / 0.493 / 0.389 / 0.470 / 0.504, with the
-`linear_layout` variant lowest (poor form factor) — real variation replacing the old
-uniform 0.500.
 
-**Gate:** a node failing the brief validator (§1.9) has its composite forced to **0.0**
-before ranking.
+**Why these five terms:** operational heating dominates a building's lifetime
+impact, so envelope insulation (0.35) and form factor (0.25 — a compact shape
+loses less heat per floor area) lead; glazing balance, embodied carbon of
+materials, and passive conditioning fill out the rest. **Why the cold-climate
+constants** (U_good 0.15, window optimum 0.12–0.22): the corpus and target
+context are Finnish, where heat retention is paramount, so the "good" envelope
+and the ideal glazing fraction are set to Nordic norms.
 
----
-
-### 1.5 Layout Generation Agent ⚠ *Algorithm replaced*
-
-**Role:** Turn the room list + adjacency requirements into actual coordinates, a
-circulation graph, and layout metrics — the concrete **L** in FBSL.
-
-**Placement — Zoned Squarified Treemap** *(replaces force-directed + SLSQP)*:
-1. Group rooms into **service | social | private** zones by room type.
-2. Lay zones out as left-to-right columns sized by area.
-3. Squarify rooms within each zone (near-square tiles).
-4. Footprint aspect ratio comes from `metadata['layout_aspect']` (variant-controlled,
-   clamped [0.4, 4.0]) — this is what makes compact vs linear plans geometrically different.
-
-Result: a **gap-free tiling** where every room's tile area equals its target area and
-adjacency is physically real (rooms share walls). No overlaps, no gaps.
-
-> *Why the change:* force-directed layout uses universal repulsion (`−k_rep/d²`), which by
-> construction never lets rooms share a wall — leaving gaps that made compactness and
-> adjacency metrics untrustworthy. The treemap tiles exactly.
-
-**Adjacency-aware tiling:** the treemap is computed twice — once area-ordered, once with
-required partners ordered consecutively — and whichever satisfies more of the brief's
-adjacency requirements is kept.
-
-**Weighted preference matrix** (still computed, used for the adjacency-graph visual):
-```
-w(i,j) = 0.4·Functional_Dependency + 0.35·Traffic_Flow + 0.25·Privacy      ∈ [−1, 1]
-```
-
-**Circulation — Room-Connectivity Graph** *(replaces free-space A*)*:
-- Build a graph: an edge connects two rooms whose tiles share a wall ≥ 0.7 m (a doorway),
-  weighted by centroid distance.
-- For every room pair, `graph_path = shortest_path(room_graph)`; efficiency =
-  `direct_distance / graph_path_length`, averaged over all pairs.
-- Adjacent rooms route directly (efficiency 1.0); distant rooms pay for each detour — so
-  compact and linear footprints earn genuinely different circulation scores.
-
-**Persisted L (per Room):** `position_vector {x,y,z}`, `width`, `length`,
-`actual_adjacencies` (rooms it shares a wall with), `required_adjacencies` (brief partners).
-`Layout.to_dict()` also serialises `room_order` and both the required and actual adjacency
-matrices.
+**Gate.** A node that fails the brief validator (§2.9) has its composite forced
+to 0.0 before ranking.
 
 ---
 
-### 1.6 Refinement Agent (Gero FBS Reformulation)
+### 2.5 Layout Generation Agent
 
-**Role:** Iteratively close the gap between actual behaviors (Bₛ, from physics) and expected
-behaviors (Bₑ), using Gero's three reformulation types.
+**Role.** Turn the room list and adjacency requirements into real coordinates,
+a circulation graph, and layout metrics — the concrete L.
 
-**Deviation:** `avg_deviation = mean( |Bₛᵢ − Bₑᵢ| / Bₑᵢ )`.
+**Placement — zoned squarified treemap.**
+1. Group rooms into **service | social | private** zones by type.
+2. Lay the zones out as left-to-right columns sized by area.
+3. Squarify rooms within each zone into near-square tiles.
+4. Take the footprint aspect ratio from `layout_aspect` (variant-controlled,
+   clamped [0.4, 4.0]).
 
-**Physics-based behavior calculation (S → Bₛ)** — key convention:
+**Why a treemap rather than force-directed placement:** a squarified treemap
+tiles the footprint *exactly and gap-free*, so every room's drawn area equals
+its target area and adjacency (shared walls) is physically real. Force-directed
+layout uses universal repulsion, which by construction leaves gaps between
+rooms — making its compactness and adjacency metrics untrustworthy. **Why
+zoning:** grouping service/social/private mirrors how dwellings are actually
+organised and gives the treemap a sensible coarse structure before fine tiling.
+
+**Adjacency.** The brief's required pairs are honored by ordering partner rooms
+consecutively within a zone; the treemap is computed twice (area-ordered vs
+partner-ordered) and whichever satisfies more requirements is kept. Satisfaction
+is then *measured* on the placed tiles (two rooms are adjacent when they share a
+wall segment ≥ 0.3 m) and reported as the real `adjacency_satisfaction_score`.
+
+**Weighted preference matrix** (used for the adjacency-graph visual):
+
 ```
-actual_value = target_value × performance_ratio
+w(i, j) = 0.4·FunctionalDependency + 0.35·TrafficFlow + 0.25·Privacy      ∈ [−1, 1]
 ```
-Direction is **pre-normalised inside the calculator**, so the scorer's `min(1, actual/target)`
-is correct for every category (thermal, acoustic, lighting, ventilation). Examples:
-- **Thermal:** weighted U-value → R-value → `ratio = min(1, R/target)`; `actual = target·(0.7 + 0.3·ratio)`
-- **Acoustic:** composite STC (log combination of transmission paths) → `ratio = min(1, STC/target)`
-- **Lighting:** Daylight Factor (split-flux, window ratio × area) → `ratio = min(1, DF/target)`
-- **Ventilation:** ACH from mechanical duct sizing, or natural stack effect if no MEP
 
-**Three reformulation types** (by deviation band):
-| Deviation | Type | Action |
-|---|---|---|
-| < 0.3 | 1 — Structure Modification | Add insulation / acoustic partition / window / MEP to close the gap |
-| 0.3 – 0.6 | 2 — Behavior Relaxation | `tolerance ×= 1.2` |
-| ≥ 0.6 | 3 — Function Redefinition | `priority ×= 0.8` on the worst-offending low-priority functions |
+**Why 0.4/0.35/0.25:** functional need to be near (kitchen–dining) is the
+strongest driver, expected foot traffic next, and privacy (which pushes rooms
+*apart*, hence it can be negative) last.
 
-> **Guard:** a `natural_ventilation` variant that deliberately dropped its MEP is **not**
-> re-given mechanical ventilation by Type-1 refinement — that would silently revert it to
-> the base design and collapse the variant space.
+**Circulation — room-connectivity graph.** An edge connects two rooms whose
+tiles share a wall ≥ 0.7 m (a doorway), weighted by centroid distance;
+circulation efficiency is the mean of `direct / graph-path` over all room pairs.
+**Why a graph, not free-space A\*:** on a gap-free plan every room is an obstacle
+and both path endpoints sit *inside* obstacles, so grid A\* finds no path and
+returns zero; movement really does pass through doorways, so the room graph is
+the physically correct model. **Why the 0.7 m doorway threshold:** a shared wall
+must be at least a door-width to be a real connection.
 
-**Convergence:** loop until `|score − prev_score| < 0.01` (ε), then output.
+**Persisted L.** Every Room stores its `position_vector {x,y,z}`, width, length,
+`actual_adjacencies` (rooms it shares a wall with), and `required_adjacencies`;
+the Layout serialises `room_order` and both adjacency matrices.
 
 ---
 
-### 1.7 Pruning Agent
+### 2.6 Refinement Agent (Gero reformulation)
 
-**Role:** Remove low-quality nodes from the explored set.
+**Role.** Close the gap between expected (Bₑ) and actual (Bₛ) behaviors.
+
+**Physics — how Bₛ is computed from S** (every calculator returns
+`actual = target × performance_ratio`, so direction is pre-normalised and the
+scorer's ratio is directly meaningful):
+- *Thermal* — area-weighted envelope U-value → R-value; `ratio = R / target_R`
+  (target 5.0). **Why R-value:** thermal resistance is what actually governs heat
+  retention, and averaging by area weights big walls correctly.
+- *Acoustic* — composite STC from material STC + a thickness bonus;
+  `ratio = STC / 45`. **Why 45:** STC 45–50 is the normal target for separating
+  living spaces.
+- *Lighting* — Daylight Factor from window area × glazing transmittance vs floor
+  area; `ratio = DF / 3`. **Why DF 3 %:** the accepted threshold for "well-lit"
+  habitable rooms.
+- *Ventilation* — mechanical ACH from duct sizing, or natural stack-effect if no
+  MEP.
+
+**Reformulation types** (Gero), chosen by average deviation:
+
+| Deviation | Type | Action | Why |
+|---|---|---|---|
+| < 0.3 | 1 — Structure modification | add insulation / partition / window / MEP | a small gap is closed by adding the right structure |
+| 0.3–0.6 | 2 — Behavior relaxation | tolerance ×1.2 | a moderate gap may mean the target was too tight |
+| ≥ 0.6 | 3 — Function redefinition | priority ×0.8 | a large gap means the problem is over-constrained; de-prioritise the offender |
+
+A `natural_ventilation` variant is never re-given mechanical MEP by Type-1
+refinement, which would silently undo its trade-off. The loop iterates until
+`|score(t) − score(t−1)| < 0.01`. **Why 0.01:** below a 1 % score change further
+iteration is not worth the compute.
+
+---
+
+### 2.7 Pruning Agent
 
 ```
 prune_threshold = max_score × 0.70
 ```
-Any valid node scoring below 70 % of the best is dropped; brief-violating nodes (composite
-forced to 0.0) are always dropped. Pruning is **diversity-preserving**: among survivors, the
-best of each distinct design signature is kept before admitting a second copy of any.
 
-*(Live example, reference brief: 8 scored → 7 kept.)*
-
----
-
-### 1.8 Aggregation Agent ⚠ *Trigger tightened*
-
-**Role:** Merge complementary high-scoring designs into a composite `aggregated_hybrid`.
-
-**Trigger:**
-```
-high_scoring = { nodes with score ≥ 0.75 × top_score }       (was ≥ 0.9 × max)
-aggregate IFF  |high_scoring| ≥ 2  AND  ≥ 2 DISTINCT design signatures
-```
-The distinct-signature guard is the important change: merging identical clones just
-reproduces the same design and would dishonestly inflate the count. When the high-scorers
-are all the same design, aggregation is **skipped** (this is correct behavior, logged as
-`Aggregation skipped: high-scoring candidates are the same design`).
-
-**Compatibility** (for the merge itself):
-```
-Compatibility(Nᵢ, Nⱼ) = 1 − (total_conflicts / total_elements)
-```
-Conflicts: function `conflicts_with`, behavior target gap > 0.5, incompatible materials,
-area deviation > 20 % / room-count diff > 2.
-
-*(Live example: 5 high-scorers → one `aggregated_hybrid` at composite 0.935.)*
+Any valid node below 70 % of the best score is dropped; brief-violating nodes
+(score 0) are always dropped. Pruning is diversity-preserving: the best of each
+distinct signature is kept before a second copy of any. **Why 0.70:** it removes
+clearly inferior designs while keeping the genuine trade-off variants (a linear
+or natural-ventilation design scoring, say, 0.80 against a 0.95 winner) that a
+tighter cut would wrongly discard.
 
 ---
 
-### 1.9 Brief Validator (Hard Gate) — *new component*
+### 2.8 Aggregation Agent
 
-Derived once from the root problem node, applied to every alternative before ranking:
-- **Expected room types** (Counter of types from the brief's rooms)
-- **Total-area band** = Σ function [min, max] × (1 ± `AREA_GRACE` = 0.10)
-- **Required adjacencies**
+```
+high_scoring = { nodes with score ≥ 0.75 × top_score }
+aggregate  IFF  |high_scoring| ≥ 2  AND  ≥ 2 distinct design signatures
+Compatibility(Nᵢ, Nⱼ) = 1 − conflicts / total_elements
+```
 
-A node **fails** (→ composite 0.0) if it has no rooms, is missing/under-counts a required
-room type, or its total area falls outside the band. Adjacency shortfalls are soft warnings.
-This is what killed the old "108 m², 3-bedroom design ranked #1 for a 220–280 m²,
-4-bedroom brief" class of fake result.
+The high-scorers are merged into an `aggregated_hybrid`. **Why require ≥ 2
+*distinct* signatures:** merging copies of one design just reproduces it, so
+aggregation only runs when there is real diversity to combine. **Why the 0.75
+band:** with real variant physics, a genuinely different design scores
+meaningfully below the winner, so a 0.90 cut would only ever catch clones; 0.75
+admits the complementary designs worth fusing.
 
 ---
 
-### 1.10 Pipeline Orchestrator
+### 2.9 Brief Validator (hard gate)
 
-**Role:** Central coordinator — runs the phases below, controls GoT expansion, and selects
-the final top-k.
+Built once from the root node, applied to every alternative. A node **fails**
+(composite → 0) if it has no rooms, is missing or under-counts a required room
+type, or its total area falls outside the brief band. The band is the stated
+total (± 10 %) when the brief gave one, otherwise the room-program sum
+(± 10 %). **Why a hard gate:** an under-sized or incomplete design must never
+out-rank a valid one, however well it scores on other dimensions. **Why ± 10 %
+grace:** small, legitimate variation (circulation allowance, variant scaling)
+should not fail an otherwise-correct design.
 
-**Complexity-adaptive parameters:**
+---
+
+### 2.10 Pipeline Orchestrator
+
+**Complexity-adaptive parameters.**
+
 ```
 C_overall = 0.4·C_req + 0.6·C_fbsl
 ```
+
+**Why 0.4/0.6:** the extracted FBSL structure (room count, behavior diversity,
+interdependencies) is a more reliable complexity signal than raw text, so it is
+weighted higher. Complexity selects scale factors applied to a base of 5
+prototypes:
+
 | Level | depth | breadth | nodes | prototypes |
 |---|---|---|---|---|
-| Low (<0.3) | ×0.7 | ×0.7 | ×0.6 | ×0.6 |
+| Low (< 0.3) | ×0.7 | ×0.7 | ×0.6 | ×0.6 |
 | Medium (0.3–0.6) | ×1.0 | ×1.0 | ×1.0 | ×1.0 |
 | High (0.6–0.8) | ×1.3 | ×1.3 | ×1.5 | ×1.3 |
-| Very High (≥0.8) | ×1.5 | ×1.5 | ×2.0 | ×1.5 |
-(base target prototypes = 5)
+| Very High (≥ 0.8) | ×1.5 | ×1.5 | ×2.0 | ×1.5 |
 
-**GoT stopping criteria:**
-```
-Stop if (improvement < 0.001 AND score > 0.7 AND stagnation ≥ patience)
-     OR high_scoring_count ≥ 3
-     OR depth / node budget reached
-```
-**Guard:** expansion never stops before depth ≥ 2, so all five Level-1 strategies are
-always expanded before stagnation checks apply.
+**Why scale with complexity:** a studio needs little exploration; a large
+multi-zone brief warrants a deeper, wider search and more candidate prototypes.
 
-**Diversity machinery:**
-- **Design signature** = fingerprint of physics/geometry-driving params (aspect,
-  ventilation strategy, mean glazing ratio, materials, room-type counts, area bucket).
-- **Dedup** collapses clone leaves before scoring.
-- **Diversity-greedy final ranking:** at each rank, pick the most *novel* remaining design
-  (new strategy family / new footprint class / new signature), best-score-first within
-  ties. #1 is still the best overall; #2/#3 become the best *different* designs, not copies.
+**Final ranking** is diversity-greedy: at each position the most novel remaining
+design (new strategy family / footprint class / signature) is chosen, best score
+first within ties. **Why:** #1 is still the best design overall, but #2 and #3
+become the best *different* designs rather than near-copies of the winner.
 
 ---
 
-## 2. Overall Pipeline Workflow
+## 3. FBSL node — the stored representation
 
-**Phase 0 — Input:** user natural-language brief.
-
-**Phase 1 — Encoding & Knowledge Retrieval**
-1. Requirement parsing (Encoder → cloud/Ollama/rule chain) → FBSL problem node
-2. Brief spec built once (validator baseline)
-3. Precedent retrieval (Research → FAISS) + area reconciliation
-
-**Phase 2 — Design-Space Generation**
-4. Complexity analysis → adaptive depth/breadth/nodes
-5. GoT Level-1: **5 named strategies** seeded
-6. GoT Level-2+: micro-transformations, round-robin interleaved expansion
-
-**Phase 3 — Evaluation & Selection**
-7. Score every leaf (5 dimensions → composite), apply brief-validator gate
-8. Dedup clone signatures
-9. **Prune** at `0.70 × max`
-10. **Aggregate** distinct high-scorers → `aggregated_hybrid`
-
-**Phase 4 — Refinement & Layout (per candidate)**
-11. Convergence loop: S → Bₛ → refine (Type 1/2/3) → generate L (treemap + room-graph
-    circulation) → re-score, until `|Δscore| < 0.01`
-
-**Phase 5 — Final Output**
-12. Re-score, Pareto front, **diversity-greedy** ranking
-13. Select top-k (`--top_k`, default 3–5)
-14. Package each prototype: **complete FBSL** (`fbsl_data.json`), all 5 scores, layout SVG,
-    adjacency graph, MD/HTML report
-
----
-
-## 3. External Systems
-
-**FAISS Vector Store:** `IndexFlatIP` over Finnish floor-plan embeddings; L2-normalised
-inner product ≡ cosine similarity. Five embedding types fused as in §1.3.
-
-**LLM services:** cloud (Groq / any OpenAI-compatible) primary, Ollama (`llama3.2`) local
-fallback, rule-based parser as the deterministic floor. Encoding temperature 0.1
-(consistency); generative steps use higher temperature.
-
-**PostgreSQL (optional persistence):** `projects`, `fbsl_nodes`
-(functions/behaviors/structures/layout as JSONB, all six scores, `generation_level`),
-`evaluations` (per-behavior breakdown, strengths/weaknesses). Independent of the
-filesystem `outputs/<project_id>/prototypes/<rank>_<id>/` bundle, which always contains
-`fbsl_data.json`, `metadata.json`, `layout.svg`, `adjacency.png`, and the reports.
-
----
-
-## 4. FBSL Node — Complete Stored Representation
-
-Every prototype persists the full node (`node.to_dict()` → `fbsl_data.json`):
+Every prototype persists the full node as `fbsl_data.json`:
 
 ```
 FBSLLayoutNode
-├─ functions{}     F: name, category, priority, activities, spatial_requirements
-├─ behaviors{}     B: category, metric, target_value, actual_value (physics), tolerance
-├─ structures{}    S: type, material, category, dimensions, load_bearing
-├─ layout          L: rooms{ position_vector{x,y,z}, width, length,
-│                             required_adjacencies[], actual_adjacencies[] },
-│                     room_order[], adjacency_matrix[][], actual_adjacency_matrix[][],
-│                     circulation_efficiency, compactness_score,
-│                     adjacency_satisfaction_score, space_utilization_ratio
-├─ scores          functional / behavioral / structural / layout / sustainability / composite
-└─ metadata        variant_type, layout_aspect, brief_validation, convergence_history, …
+├─ functions{}   F: name, category, priority, activities, spatial_requirements
+├─ behaviors{}   B: category, metric, target, actual (physics), tolerance
+├─ structures{}  S: type, material, category, dimensions, load_bearing
+├─ layout        L: rooms{ position_vector, width, length,
+│                          required_adjacencies[], actual_adjacencies[] },
+│                   room_order[], adjacency_matrix[][], actual_adjacency_matrix[][],
+│                   circulation_efficiency, compactness_score,
+│                   adjacency_satisfaction_score, space_utilization_ratio
+├─ scores        functional / behavioral / structural / layout / sustainability / composite
+└─ metadata      variant_type, layout_aspect, brief_validation, convergence_history,
+                 precedents_count, rag_areas_reconciled, precedent_adjacencies, …
 ```
 
----
-
-## 5. Known Limitations (stated, not hidden)
-
-1. **S_sust** is now computed from real envelope physics + geometry and is layout-coupled
-   (see §1.4). Its absolute level is bounded by the pipeline's default envelope (mostly
-   gypsum partitions + glazing + concrete foundation), so scores sit in a realistic
-   ~0.39–0.52 band unless a design explicitly adds insulation / low-carbon materials.
-2. **RAG** now retrieves real room precedents with areas from CubiCasa5K and grounds room
-   sizing (see §1.3). Remaining nuance: reconciliation only *nudges* areas (λ = 0.6 toward
-   the stated value) and is clamped to the brief band, so its effect is intentionally
-   modest; adjacency-pattern mining from precedents is not yet used.
-3. **Ollama on 4 GB GPUs** still times out at 60 s; the cloud-first chain is what makes the
-   LLM path reliable. With no key and no reachable Ollama, extraction falls to the
-   rule-based parser (functional, but coarser on per-room areas).
-4. The **force-directed / A\*** code paths remain in the tree as dead/legacy references,
-   superseded by the treemap and room-graph methods.
+Every number in this file is independently checkable: the composite equals the
+weighted sum of the five sub-scores; the room areas sum to the total; the tiles
+are gap-free and non-overlapping; the compactness equals the bounding-box aspect
+ratio; and each "satisfied" adjacency corresponds to two rooms that really share
+a wall.
 
 ---
 
-*Document generated from source verification of `backend/` on the current `main` branch.
-Formulas quoted are the ones actually executed, cross-checked against
-`scoring_agent.py`, `spatial_algorithms.py`, `layout_agent.py`, `graph_of_thoughts.py`,
-`behavior_calculator.py`, `encoder_agent.py`, `brief_validator.py`, and
-`orchestrator.py`.*
+## 4. End-to-end workflow
+
+- **Phase 0 — Input.** Natural-language brief.
+- **Phase 1 — Encode & retrieve.** Encoder (cloud → Ollama → rule) builds the
+  problem node and fits it to the stated total; the brief spec is captured;
+  Research retrieves precedents and reconciles areas.
+- **Phase 2 — Design space.** Complexity sets depth/breadth; GoT seeds the five
+  strategies and expands them; clone signatures are collapsed.
+- **Phase 3 — Evaluate & select.** Every leaf is scored on five dimensions
+  (brief-validator gate), pruned at 0.70 × max, and distinct high-scorers are
+  aggregated into a hybrid.
+- **Phase 4 — Refine & lay out.** For each candidate the convergence loop
+  computes Bₛ, refines, generates the L (treemap + room-graph circulation), and
+  re-scores until stable.
+- **Phase 5 — Output.** Re-score, build the Pareto front, apply diversity-greedy
+  ranking, select the top-k, and package each prototype (complete FBSL, all five
+  scores, layout SVG, adjacency graph, MD/HTML report).
+
+---
+
+## 5. External systems
+
+- **FAISS vector store** — `IndexFlatIP` over 34,319 room embeddings
+  (`all-MiniLM-L6-v2`, 384-dim); L2-normalised inner product ≡ cosine.
+- **LLM services** — cloud (Groq / any OpenAI-compatible) primary, local Ollama
+  (`llama3.2`) fallback, rule-based parser as the deterministic floor. Encoding
+  temperature 0.1 for consistent structured extraction.
+- **PostgreSQL (optional)** — `projects`, `fbsl_nodes`
+  (F/B/S/L as JSONB, all six scores, generation level), `evaluations`
+  (per-behavior breakdown, strengths/weaknesses). The filesystem bundle under
+  `outputs/<project>/prototypes/<rank>_<id>/` (`fbsl_data.json`, `metadata.json`,
+  `layout.svg`, `adjacency.png`, reports) is independent of the database.
+
+---
+
+## 6. Regression protection
+
+`tests/` holds a pytest suite (26 tests) covering: the five scoring dimensions
+are real and discriminating; the encoder's parsing, lexicon, area/adjacency
+guards, and stated-total fitting; treemap tiling, measured adjacency, and
+room-graph circulation; design-signature dedup and the five strategies; and the
+LLM provider fallback chain. `pytest tests/` runs green.
+
+---
+
+## 7. Known limitations (stated, not hidden)
+
+1. **S_s** is a feasibility *check*, not a quality gradient — it is uniform-high
+   across structurally-equivalent variants and drops only for genuinely
+   infeasible ones. This is the correct behavior for feasibility, but it means
+   S_s adds little ranking spread between sound designs.
+2. **The refinement loop** is often idle: because the encoder + treemap already
+   produce spec-meeting designs, most behaviors start satisfied, so Gero
+   reformulation rarely fires. The machinery is exercised only when a design
+   genuinely misses a target.
+3. **Precedent adjacency** is surfaced as advisory knowledge but does not drive
+   placement (zoning already captures most of it).
+4. **Local Ollama** on a 4 GB GPU times out at 60 s; the cloud-first chain is
+   what makes the LLM path reliable.
+
+---
+
+## 8. Summary of key parameters and their rationale
+
+| Parameter | Value | Why this value |
+|---|---|---|
+| Composite ρ | 1.0 | interpretable weighted mean; machinery kept to harden later |
+| Score weights | .25/.20/.20/.25/.10 | client-felt outcomes (F, L) lead; sustainability secondary |
+| perf() meet / band / margin | 0.85 / 0.15 / 0.30 | meeting brief is "good"; 30 % over target is realistic "excellent" |
+| Behavior ratio clamp | 2× | let `actual` carry over-performance without absurd values |
+| S_l split | .30/.25/.30/.15 | adjacency & utilisation lead; compactness a shaping term |
+| S_sust split | .35/.25/.15/.15/.10 | operational heat (envelope, form) dominates lifetime impact |
+| S_s split | .35/.25/.20/.20 | wrong material is the worst feasibility failure |
+| U_good / U_poor | 0.15 / 1.20 | Nordic cold-climate envelope references |
+| Glazing optimum | 0.12–0.22 | balances daylight against heat loss in a cold climate |
+| Max span | 6 m | practical floor span before intermediate support |
+| Doorway threshold | 0.7 m | minimum shared-wall length for a real connection |
+| w(i,j) split | .4/.35/.25 | function proximity > traffic > privacy |
+| Adjacency prior threshold | 0.60 | keep only reliably-adjacent room-type pairs |
+| RAG blend λ | 0.6 | user's stated area dominates, nudged by precedent |
+| Prune threshold | 0.70 × max | drop inferior designs, keep real trade-offs |
+| Aggregate band | 0.75 × top | admit complementary designs, exclude clones |
+| Area grace | ±10 % | tolerate legitimate size variation |
+| Complexity C weights | 0.4 req / 0.6 fbsl | structured FBSL is the stronger complexity signal |
+| Layout aspects | 1.05–2.4 | span square → elongated footprints for real geometric diversity |
+
+---
+
+## 9. Physics and formula quick-reference
+
+| Quantity | Formula | Why this form |
+|---|---|---|
+| Composite | `(Σ wᵢ Sᵢ^ρ)^(1/ρ)`, ρ=1 | tunable compensation; weighted mean at ρ=1 |
+| perf(ratio) | 0.85·ratio (≤1); 0.85+0.15·min(1,(ratio−1)/0.30) (>1) | reward exceeding, not just meeting, target |
+| S_f | Σ priorityᵢ·Coverage(fᵢ) / Σ priorityᵢ | priority-weighted degree of satisfaction |
+| S_b | exp(mean(ln(perf(ratioᵢ)))) | geometric mean — one bad behavior sinks it |
+| Compactness | min(W,H)/max(W,H) | footprint squareness distinguishes square from corridor |
+| Circulation | mean(direct / graph-path) | doorway-graph walking efficiency |
+| Similarity | cos(E(q),E(pᵢ)) | magnitude-independent semantic closeness |
+| Area reconcile | λ·a_stated + (1−λ)·â_precedent | user-led, precedent-nudged |
+| Thermal | ratio = R / target_R | resistance governs heat retention |
+| Acoustic | ratio = STC / 45 | STC is the transmission-loss standard |
+| Lighting | ratio = DF / 3 | daylight factor threshold for habitable rooms |
+
+---
+
+## 10. Comparison with the original design
+
+The sections above describe the system as it runs today. The table below records
+where that differs from the project's original architecture, and why each change
+was made — consolidated here so the body reads as a straight description.
+
+| Area | Original design | Current implementation | Reason for the change |
+|---|---|---|---|
+| **Encoder LLM** | Ollama (gemma3 / llama3.1) only | Cloud-first chain: Groq → Ollama → rule-based parser | Local models cannot fit a 4 GB GPU and time out; a fast cloud model makes extraction reliable, with graceful fallback |
+| **LLM room vocabulary** | 10 fixed types | 18 types incl. garage, sauna, mudroom, office, entry, closet | the narrow enum silently dropped valid rooms |
+| **Stated total area** | not parsed or enforced | parsed, room program scaled to it, validator enforces it | designs were coming out ~15 % under the size the user asked for |
+| **Generalizer** | 4 label-only variants | 5 named strategies with real parameter deltas, expanded in GoT | label-only variants scored identically; now each changes physics/geometry |
+| **Layout algorithm** | force-directed + A\* on a grid | zoned squarified treemap + room-connectivity circulation | force-directed leaves gaps (untrustworthy metrics); grid A\* finds no path on a tiled plan |
+| **Compactness** | room-area ÷ bounding-box area | min(W,H) / max(W,H) | the old ratio is ≈1 for any gap-free plan and cannot tell a square from a corridor |
+| **Circulation** | A\* path length on a grid | shortest path on the doorway graph | endpoints sit inside obstacles on a tiled plan, so grid A\* returned 0 |
+| **S_l** | 0.4·Compact + 0.3·Circ + 0.3·Adj (3 terms) | 0.30·Util + 0.25·Circ + 0.30·Adj + 0.15·Compact (4 terms) | space utilisation added as an explicit term |
+| **Composite weights** | .30/.30/.20/.15/.05 | .25/.20/.20/.25/.10 | layout weighted up now that L is real, measured geometry |
+| **Behavioral scoring** | min(1, actual/target) | perf() rewards exceeding target | the cap discarded all performance above target, pinning S_b at 1.0 |
+| **Area behavior** | summed the whole house vs a per-room target | compares a room's own area to its target | a 12× ratio falsely pinned S_f/S_b at 1.0 |
+| **Structural feasibility (S_s)** | start 1.0, ×0.7/×0.8 for missing parts (always 1.0) | material validity + dimensions + span + load path | the old form never varied; now it is a real feasibility check |
+| **Sustainability (S_sust)** | flat 0.5 + rare metadata bonuses | envelope thermal + form + glazing + carbon + passive | was a constant contributing no ranking signal; now layout-coupled |
+| **Aggregation trigger** | score ≥ max×0.9 AND compatibility > 0.7 | score ≥ top×0.75 AND ≥ 2 distinct signatures | the 0.9 cut only ever matched clones; merging clones reproduces one design |
+| **Adjacency satisfaction** | assumed / hard-coded 0.6 | measured on shared walls, brief-derived | the score must reflect the actual plan |
+| **RAG corpus** | annotation tokens, single fake plan id, no areas | 34,319 room records from 3,787 real plans, with areas | the old store returned nothing usable; retrieval was inert |
+| **FBSL persistence** | L fields declared but never filled | full L generated and stored (coordinates + adjacency matrices) | the layout layer existed only in the SVG, not in the data |
+| **Tests** | none | 26-test pytest suite | no regression protection for any of the above |
+
+**Net effect.** In the original system three of the five scoring dimensions were
+constant (two through bugs, one hard-coded), the layout metrics were untrustworthy,
+RAG returned nothing, the stated size was ignored, and the "variants" scored
+identically — so the ranking was effectively arbitrary. In the current system all
+five dimensions are computed from real physics or geometry and discriminate
+between designs; the layout is gap-free with measured adjacency and circulation;
+retrieval grounds room sizes in real precedents; the brief's stated total is
+honored; and every number in the output can be independently re-derived from the
+stored geometry.
+
+---
+
+*This document reflects the code on the current `main` branch and was written by
+reading the implementation directly (`scoring_agent.py`, `behavior_calculator.py`,
+`layout_agent.py`, `graph_of_thoughts.py`, `encoder_agent.py`,
+`research_agent.py`, `brief_validator.py`, `spatial_algorithms.py`,
+`orchestrator.py`, `build_cubicasa_rag.py`).*
