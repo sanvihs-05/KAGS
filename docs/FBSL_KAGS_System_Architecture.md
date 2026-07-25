@@ -180,21 +180,49 @@ S_composite = ( Σᵢ wᵢ · Sᵢ^ρ )^(1/ρ)          (ρ = 1.0 in the pipelin
 *(Original spec: 0.30 / 0.30 / 0.20 / 0.15 / 0.05 with a plain weighted sum. Layout was
 weighted up once L became real measured geometry.)*
 
+Both S_f and S_b score each behavior with **`perf(ratio)`**, which rewards
+*exceeding* the target within a bounded band (not just meeting it):
+```
+ratio = B_actual / B_expected
+perf(ratio) = 0.85 · ratio                      if ratio ≤ 1   (deficient → 0, meets → 0.85)
+            = 0.85 + 0.15 · min(1, (ratio−1)/0.30)   if ratio > 1   (exceeds by 30% → 1.0)
+```
+The old `min(1, ratio)` flattened "meets target" and "far exceeds target" both
+to 1.0, discarding all performance above target — which pinned S_f and S_b at a
+constant 1.0 for every design. Now an excellent design (better insulation, more
+daylight, larger high-priority rooms) scores above one that merely satisfies the
+brief. (The behavior calculator was also uncapped — `performance_ratio` clamps
+to 2× instead of 1× — so `actual` carries true performance above target.)
+
 **1. Functional Adequacy (S_f)** — degree of satisfaction, not a binary count:
 ```
-Coverage(fᵢ) = mean over related behaviors of  min(1, B_actual / B_expected)
+Coverage(fᵢ) = mean over related behaviors of  perf(B_actual / B_expected)
 S_f          = Σᵢ (priorityᵢ · Coverage(fᵢ)) / Σᵢ priorityᵢ
 ```
+*(An area behavior compares a room's OWN area to its per-room target — a fixed
+bug summed the whole house against a per-room target, giving 12× ratios that
+falsely pinned S_f/S_b at 1.0.)*
 
 **2. Behavioral Performance (S_b)** — geometric mean, so one bad behavior sinks the score:
 ```
-S_b = exp( mean( ln( min(1, B_actualᵢ / B_expectedᵢ) ) ) )
+S_b = exp( mean( ln( perf(B_actualᵢ / B_expectedᵢ) ) ) )
 ```
 
-**3. Structural Feasibility (S_s):**
+**3. Structural Feasibility (S_s)** — real feasibility, not a constant (was: start
+1.0 × 0.7/0.8 for missing structure, i.e. always 1.0):
 ```
-start 1.0;  × 0.7 if no load-bearing structure;  × 0.8 if no envelope structure
+S_s = 0.35·MaterialValidity + 0.25·DimensionalFeasibility
+    + 0.20·SpanFeasibility + 0.20·LoadPath
+
+MaterialValidity      = fraction of load-bearing elements using a structural
+                        material (a gypsum/glass load-bearing wall is penalised)
+DimensionalFeasibility = load-bearing thickness ≥ 0.15 m, foundation depth ≥ 0.6 m
+SpanFeasibility       = fraction of rooms whose short side ≤ 6 m max span (layout-coupled)
+LoadPath              = foundation + vertical support present
 ```
+It is a feasibility CHECK (uniform-high for feasible designs, drops for
+genuinely infeasible ones), not a quality gradient — unit-verified
+1.00 / 0.72 / 0.14 for feasible / marginal / infeasible.
 
 **4. Layout Efficiency (S_l)** ⚠ *4-term, new geometry formulas*:
 ```

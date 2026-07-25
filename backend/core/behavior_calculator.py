@@ -128,23 +128,32 @@ class BehaviorCalculator:
         """
         metric_lower = behavior.metric_name.lower()
         
-        # Area-based metrics
+        # Area-based metrics. A per-room area behavior (e.g. 'bedroom_area',
+        # target = one room's preferred area) must be compared to that room's
+        # area — NOT the sum of the whole house. The old fallback summed EVERY
+        # room when the function-id linkage failed (which it does after GoT
+        # deep-copies remap ids), giving actual = total floor area (~175 m²)
+        # against a ~14 m² target — a 12× ratio that pinned S_f/S_b at 1.0.
         if 'area' in metric_lower:
-            # If behavior is tied to a specific function, sum rooms for that function
-            if behavior.derived_from_function:
-                related_rooms = [
-                    r for r in node.layout.rooms.values()
-                    if r.function_id == behavior.derived_from_function
-                ]
-                if related_rooms:
-                    total_area = sum(r.area for r in related_rooms)
-                    logger.debug(f"    Calculated area from {len(related_rooms)} related rooms: {total_area:.2f} m²")
-                    return total_area
-            
-            # Otherwise, sum all room areas
-            total_area = sum(r.area for r in node.layout.rooms.values())
-            logger.debug(f"    Calculated total area from all rooms: {total_area:.2f} m²")
-            return total_area
+            rooms = list(node.layout.rooms.values())
+            # 1) rooms linked to this behavior's function
+            related = [r for r in rooms
+                       if behavior.derived_from_function
+                       and r.function_id == behavior.derived_from_function]
+            # 2) fallback: match by room type parsed from the metric name
+            #    ('bedroom_area' -> 'bedroom'), robust to broken id linkage
+            if not related:
+                rtype = metric_lower.replace('_area', '').replace('area', '').strip('_ ')
+                related = [r for r in rooms if (r.room_type or '').lower() == rtype]
+            if related:
+                # per-room behavior: mean area of the matching room(s)
+                mean_area = sum(r.area for r in related) / len(related)
+                return mean_area
+            # 3) last resort: mean room area — never the sum (which inflates
+            #    a per-room ratio by the room count).
+            if rooms:
+                return sum(r.area for r in rooms) / len(rooms)
+            return None
         
         # Volume-based metrics
         if 'volume' in metric_lower:
@@ -227,9 +236,13 @@ class BehaviorCalculator:
         
         avg_r_value = total_r_value / max(total_weight, 1.0)
         target_r = 5.0
-        performance_ratio = min(1.0, avg_r_value / target_r)
-        
-        actual_value = behavior.target_value * (0.7 + 0.3 * performance_ratio) if behavior.target_value else performance_ratio
+        # Uncapped (clamped to 2×): actual carries TRUE performance so a design
+        # that EXCEEDS the target R-value scores higher than one that just meets
+        # it, instead of both being flattened to the target. The scorer rewards
+        # a bounded margin above target (see ScoringAgent._perf_score).
+        performance_ratio = min(2.0, avg_r_value / target_r)
+
+        actual_value = behavior.target_value * performance_ratio if behavior.target_value else performance_ratio
         
         logger.debug(f"    Thermal: R={avg_r_value:.2f}, ratio={performance_ratio:.2f}")
         return actual_value
@@ -273,7 +286,7 @@ class BehaviorCalculator:
         if stc_ratings:
             avg_stc = np.mean(stc_ratings)
             target_stc = 45.0
-            performance_ratio = min(1.0, avg_stc / target_stc)
+            performance_ratio = min(2.0, avg_stc / target_stc)  # uncapped: reward exceeding target STC
             
             actual_value = behavior.target_value * performance_ratio if behavior.target_value else avg_stc
             logger.debug(f"    Acoustic: STC={avg_stc:.1f}, ratio={performance_ratio:.2f}")
@@ -324,7 +337,7 @@ class BehaviorCalculator:
                 daylight_factor = window_ratio * glass_transmittance * 100
                 
                 target_df = 3.0
-                performance_ratio = min(1.0, daylight_factor / target_df)
+                performance_ratio = min(2.0, daylight_factor / target_df)  # uncapped: reward exceeding target DF
                 
                 actual_value = behavior.target_value * performance_ratio if behavior.target_value else daylight_factor
                 logger.debug(f"    Lighting: DF={daylight_factor:.2f}%, ratio={performance_ratio:.2f}")
@@ -345,19 +358,32 @@ class BehaviorCalculator:
         
         metric = behavior.metric_name.lower()
         
-        # Area-related metrics
+        # Area-related metrics — a per-room area behavior (target = ONE room's
+        # preferred area) must be compared to that room's area, not the whole
+        # house. Summing every room gave actual ~= total floor area against a
+        # ~14 m² target, a 12× ratio that flattened S_f/S_b to 1.0. Match the
+        # behavior's function (or the room type in its metric name) and use the
+        # mean matching-room area.
         if 'area' in metric:
             if node.layout and node.layout.rooms:
-                total_area = sum(r.area for r in node.layout.rooms.values())
-                logger.debug(f"    Spatial area: {total_area:.2f} m²")
-                return total_area
+                rooms = list(node.layout.rooms.values())
+                related = [r for r in rooms
+                           if behavior.derived_from_function
+                           and r.function_id == behavior.derived_from_function]
+                if not related:
+                    rtype = metric.replace('_area', '').replace('area', '').strip('_ ')
+                    related = [r for r in rooms if (r.room_type or '').lower() == rtype]
+                pool = related if related else rooms
+                mean_area = sum(r.area for r in pool) / max(len(pool), 1)
+                logger.debug(f"    Spatial area (per-room mean): {mean_area:.2f} m²")
+                return mean_area
             elif node.functions:
-                estimated_area = 0.0
-                for func in node.functions.values():
-                    if func.spatial_requirements and isinstance(func.spatial_requirements, dict):
-                        estimated_area += func.spatial_requirements.get('preferred_area', 15.0)
-                logger.debug(f"    Estimated area: {estimated_area:.2f} m²")
-                return estimated_area * 0.90
+                # per-room target: mean preferred area across functions
+                areas = [func.spatial_requirements.get('preferred_area', 15.0)
+                         for func in node.functions.values()
+                         if func.spatial_requirements and isinstance(func.spatial_requirements, dict)]
+                if areas:
+                    return (sum(areas) / len(areas)) * 0.90
         
         # Privacy-related metrics
         if 'privacy' in metric:

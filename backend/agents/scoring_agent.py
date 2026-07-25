@@ -154,6 +154,25 @@ class ScoringAgent:
         logger.info(f"✓ Scoring complete: composite={node.composite_score:.3f}")
         return result
 
+    # Fraction of a behavior's [0,1] score reserved for EXCEEDING target.
+    # A design that just meets target scores (1 − this); exceeding by
+    # PERF_MARGIN or more reaches 1.0. This lets S_f/S_b distinguish an
+    # excellent design (better insulation, more daylight) from one that
+    # merely satisfies the brief — the old min(1, actual/target) flattened
+    # both to 1.0 and discarded all performance above target.
+    PERF_EXCEED_BAND = 0.15
+    PERF_MARGIN = 0.30
+
+    @classmethod
+    def _perf_score(cls, ratio: float) -> float:
+        """Map actual/target ratio to [0,1]: proportional below target,
+        rising through the reserved band from 'meets target' to 'exceeds by
+        PERF_MARGIN'."""
+        base = 1.0 - cls.PERF_EXCEED_BAND        # score at exactly meeting target
+        if ratio <= 1.0:
+            return max(0.0, base * ratio)
+        return min(1.0, base + cls.PERF_EXCEED_BAND * min(1.0, (ratio - 1.0) / cls.PERF_MARGIN))
+
     def _score_functions(self, node: FBSLLayoutNode) -> Tuple[float, Dict]:
         """
         Score functional adequacy using Coverage(f_i) for each function
@@ -188,9 +207,10 @@ class ScoringAgent:
                 
                 for b in related_behaviors:
                     if b.target_value is not None and b.actual_value is not None:
-                        # Ratio-based scoring: how close to target
+                        # Reward exceeding target (not just meeting it), so
+                        # functional adequacy distinguishes better designs.
                         ratio = b.actual_value / max(b.target_value, 1e-9)
-                        score = float(min(1.0, ratio))  # Cap at 1.0 (met or exceeded)
+                        score = self._perf_score(ratio)
                         behavior_scores.append(score)
                         if b.is_satisfied:
                             satisfied_count += 1
@@ -247,10 +267,12 @@ class ScoringAgent:
         details: Dict[str, Any] = {}
 
         for behav_id, behav in node.behaviors.items():
-            # Calculate ratio: actual / target (capped at 1.0)
+            # Reward exceeding target within a bounded band (see _perf_score),
+            # so a design that outperforms the brief scores above one that
+            # merely meets it — the old min(1, actual/target) flattened both.
             if behav.target_value is not None and behav.actual_value is not None:
                 ratio = behav.actual_value / max(behav.target_value, 1e-9)
-                score = float(min(1.0, ratio))
+                score = self._perf_score(ratio)
             else:
                 # Neutral default when not measured
                 score = 0.5

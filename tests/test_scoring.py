@@ -1,11 +1,42 @@
 """Scoring: S_sust and S_s must be REAL (computed from the design), not the
 flat constants they used to be. Guards against regressing back to 0.5 / 1.0."""
 from backend.core.fbsl_models import (
-    FBSLLayoutNode, Structure, Layout, Room, StructureType,
+    FBSLLayoutNode, Structure, Layout, Room, StructureType, Behavior, BehaviorCategory,
 )
 from backend.agents.scoring_agent import ScoringAgent
 
 scorer = ScoringAgent(rho=1.0)
+
+
+def _behav_node(ratio):
+    """A node whose behaviors all perform at `ratio` × their target."""
+    n = FBSLLayoutNode()
+    for cat, tgt in [(BehaviorCategory.THERMAL, 21), (BehaviorCategory.LIGHTING, 3),
+                     (BehaviorCategory.ACOUSTIC, 45)]:
+        b = Behavior(category=cat, metric_name=f"{cat.value}_m", metric_unit="x",
+                     target_value=tgt, actual_value=tgt * ratio, tolerance=0.2)
+        n.behaviors[b.behavior_id] = b
+    return n
+
+
+def test_behavioral_rewards_exceeding_target():
+    """S_b must distinguish deficient < adequate < excellent — the old
+    min(1, actual/target) flattened adequate and excellent both to 1.0."""
+    deficient, _ = scorer._score_behaviors(_behav_node(0.8))
+    adequate, _ = scorer._score_behaviors(_behav_node(1.0))
+    excellent, _ = scorer._score_behaviors(_behav_node(1.3))
+    assert deficient < adequate < excellent
+    assert adequate < 1.0, "meeting target must leave headroom to reward exceeding"
+    assert excellent >= 0.99, "clearly exceeding target reaches the top"
+
+
+def test_perf_score_monotonic_and_bounded():
+    prev = -1.0
+    for r in [0.0, 0.5, 1.0, 1.15, 1.30, 2.0]:
+        s = ScoringAgent._perf_score(r)
+        assert 0.0 <= s <= 1.0
+        assert s >= prev, "must be non-decreasing in performance ratio"
+        prev = s
 
 
 def _env_node(*, wall_mat, window_ratio, compactness, has_mep, natural=False):
