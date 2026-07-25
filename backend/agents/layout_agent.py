@@ -537,8 +537,9 @@ class LayoutGenerationAgent:
     _ZONE_KEYWORDS = {
         'social': ['living', 'dining', 'kitchen', 'family', 'lounge', 'great'],
         'private': ['bedroom', 'bed', 'bath', 'ensuite', 'wc', 'toilet',
-                    'study', 'office'],
-        # everything else (laundry, mudroom, garage, storage, utility, hall) → service
+                    'study', 'office', 'sauna', 'closet', 'dressing'],
+        # everything else (laundry, mudroom, garage, storage, utility, hall,
+        # entry, balcony) → service
     }
 
     def _zone_of(self, room_type: str) -> str:

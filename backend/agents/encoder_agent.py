@@ -474,6 +474,7 @@ Extract all spatial information and return as JSON."""
         'study': (10.0, 14.0), 'office': (10.0, 14.0), 'utility': (4.0, 10.0),
         'laundry': (4.0, 10.0), 'mudroom': (4.0, 8.0), 'garage': (18.0, 40.0),
         'storage': (4.0, 12.0), 'hallway': (3.0, 8.0), 'balcony': (4.0, 10.0),
+        'sauna': (3.0, 8.0), 'closet': (2.0, 6.0), 'entry': (2.0, 8.0),
     }
     _DEFAULT_AREA_FALLBACK = (10.0, 15.0)
 
@@ -807,7 +808,10 @@ Extract all spatial information and return as JSON."""
             'utility': FunctionCategory.TECHNICAL,
             'storage': FunctionCategory.SPATIAL,
             'hallway': FunctionCategory.SPATIAL,
-            'balcony': FunctionCategory.ENVIRONMENTAL
+            'balcony': FunctionCategory.ENVIRONMENTAL,
+            'sauna': FunctionCategory.TECHNICAL,
+            'closet': FunctionCategory.SPATIAL,
+            'entry': FunctionCategory.SPATIAL,
         }
         return mapping.get(room_type, FunctionCategory.SPATIAL)
     
@@ -823,7 +827,10 @@ Extract all spatial information and return as JSON."""
             'utility': 0.6,
             'storage': 0.5,
             'hallway': 0.65,
-            'balcony': 0.6
+            'balcony': 0.6,
+            'sauna': 0.6,
+            'closet': 0.5,
+            'entry': 0.6,
         }
         return priorities.get(room_type, 0.7)
     
@@ -839,7 +846,10 @@ Extract all spatial information and return as JSON."""
             'utility': ['laundry', 'cleaning', 'storage'],
             'storage': ['storage', 'organization'],
             'hallway': ['circulation', 'transition'],
-            'balcony': ['outdoor_access', 'fresh_air', 'relaxation']
+            'balcony': ['outdoor_access', 'fresh_air', 'relaxation'],
+            'sauna': ['bathing', 'relaxation', 'hygiene'],
+            'closet': ['storage', 'organization'],
+            'entry': ['circulation', 'transition', 'arrival'],
         }
         return activities.get(room_type, ['general_use'])
     
@@ -863,7 +873,11 @@ Extract all spatial information and return as JSON."""
         (r'laundr(?:y|ies)|utility(?:\s*rooms?)?', 'laundry', (4.0, 10.0), False),
         (r'mud\s*rooms?', 'mudroom', (4.0, 8.0), False),
         (r'garages?', 'garage', (18.0, 40.0), False),
-        (r'store\s*rooms?|storages?|pantr(?:y|ies)|closets?', 'storage', (4.0, 12.0), False),
+        (r'saunas?', 'sauna', (3.0, 8.0), False),
+        (r'walk\s*-?\s*in\s*closets?|wardrobes?|closets?', 'closet', (2.0, 6.0), False),
+        (r'entr(?:y|ance)(?:\s*(?:hall|way))?|foyers?|hall\s*ways?|lobb(?:y|ies)', 'entry', (2.0, 8.0), False),
+        (r'balcon(?:y|ies)|terraces?', 'balcony', (4.0, 10.0), False),
+        (r'store\s*rooms?|storages?|pantr(?:y|ies)', 'storage', (4.0, 12.0), False),
     ]
 
     @classmethod
