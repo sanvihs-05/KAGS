@@ -31,9 +31,14 @@ class ValidationResult:
     passed: bool = True
     errors: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
+    total_area: Optional[float] = None      # measured design total
+    total_min: Optional[float] = None       # brief band (graced)
+    total_max: Optional[float] = None
 
     def to_dict(self) -> Dict[str, Any]:
-        return {'passed': self.passed, 'errors': self.errors, 'warnings': self.warnings}
+        return {'passed': self.passed, 'errors': self.errors, 'warnings': self.warnings,
+                'total_area': self.total_area,
+                'total_min': self.total_min, 'total_max': self.total_max}
 
 
 class BriefValidator:
@@ -76,7 +81,14 @@ class BriefValidator:
                 total_max += float(hi)
                 bands_found += 1
 
-        if bands_found > 0:
+        # Prefer the brief's STATED total area when the user gave one — it is
+        # the explicit constraint. Otherwise derive a band from the room
+        # program's spatial requirements.
+        stated = (problem_node.metadata or {}).get('target_total_area')
+        if stated and len(stated) == 2:
+            spec['total_min'] = float(stated[0]) * (1 - AREA_GRACE)
+            spec['total_max'] = float(stated[1]) * (1 + AREA_GRACE)
+        elif bands_found > 0:
             spec['total_min'] = total_min * (1 - AREA_GRACE)
             spec['total_max'] = total_max * (1 + AREA_GRACE)
         elif rooms:
@@ -126,6 +138,9 @@ class BriefValidator:
         # --- Hard check 2: total area within the brief band --------------------
         total = sum(r.area for r in rooms.values())
         lo, hi = spec.get('total_min'), spec.get('total_max')
+        res.total_area = round(total, 1)
+        res.total_min = round(lo, 1) if lo is not None else None
+        res.total_max = round(hi, 1) if hi is not None else None
         if lo is not None and hi is not None:
             if not (lo <= total <= hi):
                 res.passed = False

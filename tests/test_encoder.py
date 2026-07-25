@@ -58,6 +58,31 @@ def test_zero_area_from_llm_is_defaulted():
     assert by['kitchen']['area_max'] > 0
 
 
+def test_parse_total_area():
+    assert EncoderAgent._parse_total_area("Total area 210-250 sqm.") == (210.0, 250.0)
+    lo, hi = EncoderAgent._parse_total_area("a home of about 200 square metres")
+    assert lo < 200 < hi
+    # a single-room area must NOT be read as the whole-design total
+    assert EncoderAgent._parse_total_area("master bedroom 18 sqm") is None
+
+
+def test_fit_rooms_to_stated_total():
+    """A room program summing below the stated total is scaled up to reach it
+    (clamped to per-room max)."""
+    from backend.core.fbsl_models import FBSLLayoutNode, Function, Room, Layout, FunctionCategory
+    n = FBSLLayoutNode(); n.layout = Layout()
+    for rt, a in [("bedroom", 14), ("bedroom", 14), ("kitchen", 16), ("living_room", 30)]:
+        f = Function(name=f"provide_{rt}", category=FunctionCategory.SPATIAL, priority=0.8,
+                     spatial_requirements={'min_area': a * 0.7, 'max_area': a * 1.5, 'preferred_area': a})
+        n.functions[f.function_id] = f
+        r = Room(name=rt, room_type=rt, area=a, function_id=f.function_id)
+        n.layout.rooms[r.room_id] = r
+    n.layout.total_area = 74
+    EncoderAgent._fit_rooms_to_total(n, (110.0, 130.0))
+    total = sum(r.area for r in n.layout.rooms.values())
+    assert total >= 110 * 0.98, f"program should reach the stated band minimum, got {total}"
+
+
 def test_adjacency_labels_resolved_to_types():
     rooms = {}
     for rid, name, rtype in [('r1', 'Master Bedroom', 'bedroom'),
