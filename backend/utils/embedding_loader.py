@@ -1,3 +1,12 @@
+import os
+# OpenMP guard — MUST precede the sentence_transformers/torch import below.
+# torch (libiomp5) and faiss (libomp) each link an OpenMP runtime; loaded in
+# one process (RAG retrieval uses both) they collide and segfault with
+# `OMP: Error #15`. Set here because internal code imports this module as
+# `utils.embedding_loader`, bypassing backend/__init__.py's guard.
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+
 import json
 import numpy as np
 from pathlib import Path

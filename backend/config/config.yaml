@@ -9,10 +9,17 @@ vector_store:
   persist_directory: ./chroma_db
   embedding_model: all-MiniLM-L6-v2
   
-  # Your existing Finnish floor plan embeddings
+  # Finnish floor-plan precedent embeddings.
+  # cubicasa_rag_store is the room-level store built by
+  # embeddings_generator/build_cubicasa_rag.py from CubiCasa5K — one record per
+  # ROOM with a real m² area (vs the legacy enhanced_multimodal_rag_store, which
+  # indexed OCR annotation tokens under a single fake plan_id and carried no
+  # area, making retrieval + reconciliation inert).
+  # NOTE: after changing this path, delete data/faiss_index so the FAISS index
+  # rebuilds from the new embeddings instead of loading the stale cached one.
   existing_embeddings:
     enabled: true
-    path: "C:\\Users\\sanvi\\OneDrive\\Desktop\\layout\\enhanced_multimodal_rag_store"
+    path: "C:\\Users\\sanvi\\OneDrive\\Desktop\\layout\\cubicasa_rag_store"
     default_embedding_type: composite
     available_types:
       - architectural
