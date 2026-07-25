@@ -60,6 +60,7 @@ class VectorStoreManager:
             emb_config = vs_config['existing_embeddings']
             try:
                 emb_path = emb_config['path']
+                self.embeddings_path = emb_path  # exposed so agents can load side artifacts (e.g. adjacency_prior.json)
                 # Create a FaissClient that will lazily load/build the index
                 self.faiss_client = FaissClient(embeddings_dir=emb_path,
                                                 index_dir=emb_config.get('faiss_index_dir', 'data/faiss_index'),
