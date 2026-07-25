@@ -209,10 +209,23 @@ Measured `Circulation`/`Adjacency` values (flagged `*_measured` in layout metada
 trusted verbatim, **including a genuine 0.0**; the old 0.8/0.6 defaults apply only to
 layouts that never went through placement.
 
-**5. Sustainability (S_sust):** 0.5 baseline + bonuses (natural-light metadata +0.05,
-energy-efficiency metadata +0.05, sustainable materials +0.10), clamped to 1.0.
-> **Honest caveat:** S_sust is largely a flat 0.5 today — not yet coupled to the envelope
-> geometry. Flagged as future work, not presented as a live discriminator.
+**5. Sustainability (S_sust)** — computed from the design's actual envelope physics and
+geometry (no longer a flat baseline):
+```
+S_sust = 0.35·EnvelopeThermal + 0.25·FormFactor + 0.15·GlazingFit
+       + 0.15·MaterialCarbon + 0.10·Passive
+
+EnvelopeThermal = clip((U_poor − mean_U) / (U_poor − U_good))   area-weighted envelope U
+FormFactor      = compactness  (min(W,H)/max(W,H) — compact plans lose less heat)
+GlazingFit      = 1.0 in the cold-climate optimum window ratio [0.12, 0.22], falling off outside
+MaterialCarbon  = 1 − area-weighted embodied-carbon (wood/timber low, concrete/steel high)
+Passive         = 1.0 for natural ventilation (no mechanical MEP), else 0.5
+```
+Reuses the same material U-values as the BehaviorCalculator for consistency. Now
+**layout-coupled** — an elongated (linear) footprint earns a lower S_sust than a compact
+one. Verified live: five prototypes scored 0.523 / 0.493 / 0.389 / 0.470 / 0.504, with the
+`linear_layout` variant lowest (poor form factor) — real variation replacing the old
+uniform 0.500.
 
 **Gate:** a node failing the brief validator (§1.9) has its composite forced to **0.0**
 before ranking.
@@ -456,7 +469,10 @@ FBSLLayoutNode
 
 ## 5. Known Limitations (stated, not hidden)
 
-1. **S_sust** is effectively a flat 0.5 — not yet coupled to envelope geometry.
+1. **S_sust** is now computed from real envelope physics + geometry and is layout-coupled
+   (see §1.4). Its absolute level is bounded by the pipeline's default envelope (mostly
+   gypsum partitions + glazing + concrete foundation), so scores sit in a realistic
+   ~0.39–0.52 band unless a design explicitly adds insulation / low-carbon materials.
 2. **RAG** now retrieves real room precedents with areas from CubiCasa5K and grounds room
    sizing (see §1.3). Remaining nuance: reconciliation only *nudges* areas (λ = 0.6 toward
    the stated value) and is clamped to the brief band, so its effect is intentionally
