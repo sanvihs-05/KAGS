@@ -282,28 +282,97 @@ class ScoringAgent:
 
         return final_score, details
 
+    # Materials that can carry structural load (for material-validity checks).
+    _STRUCTURAL_MATERIALS = {'concrete', 'reinforced_concrete', 'steel', 'brick',
+                             'wood', 'timber', 'masonry'}
+    # Structural design rules — mirrors BehaviorCalculator._initialize_structural_rules.
+    _MAX_SPAN = 6.0              # m, unsupported span before intermediate support needed
+    _MIN_STRUCT_THICK = 0.15    # m, min thickness for a load-bearing element
+    _MIN_FOUNDATION_DEPTH = 0.6  # m
+
     def _score_structures(self, node: FBSLLayoutNode) -> Tuple[float, Dict]:
-        """Score structural feasibility"""
+        """Score structural feasibility from the design's ACTUAL structures and
+        geometry (was a near-constant 1.0 that only dropped for missing
+        structure — which the brief validator already rejects).
+
+        S_s = 0.35·MaterialValidity + 0.25·DimensionalFeasibility
+            + 0.20·SpanFeasibility + 0.20·LoadPath
+
+        Follows the spec's Feasibility × Compatibility intent: material validity
+        and dimensional limits (feasibility) plus load-path completeness. Now
+        layout-coupled — rooms wider than the max unsupported span reduce
+        span feasibility, so a stretched linear plan scores lower than a
+        compact one."""
         if not node.structures:
             return 0.5, {'message': 'No structures defined'}
-
-        score = 1.0
         details: Dict[str, Any] = {}
+        structs = list(node.structures.values())
 
-        # Check for essential structural features
-        has_structural = any(s.load_bearing for s in node.structures.values())
-        has_envelope = any(s.category == 'envelope' for s in node.structures.values())
+        def _stype(s):
+            return getattr(getattr(s, 'structure_type', None), 'value', '') or ''
 
-        if not has_structural:
-            score *= 0.7
-        if not has_envelope:
-            score *= 0.8
+        # 1) Material validity — a load-bearing element must use a structural
+        #    material (a gypsum or glass load-bearing wall is not feasible).
+        struct_elems = [s for s in structs if _stype(s) != 'mep']
+        if struct_elems:
+            valid = 0
+            for s in struct_elems:
+                mat = (s.material_type or '').lower()
+                if s.load_bearing:
+                    ok = any(m in mat for m in self._STRUCTURAL_MATERIALS)
+                else:
+                    ok = True  # non-load-bearing: any material acceptable
+                valid += 1 if ok else 0
+            material_validity = valid / len(struct_elems)
+        else:
+            material_validity = 0.5
+        details['material_validity'] = round(material_validity, 3)
 
-        details['has_structural_system'] = bool(has_structural)
-        details['has_envelope'] = bool(has_envelope)
-        details['total_structures'] = len(node.structures)
+        # 2) Dimensional feasibility — load-bearing elements thick enough;
+        #    foundations deep enough.
+        dim_checked = dim_ok = 0
+        for s in struct_elems:
+            dims = s.dimensions or {}
+            th = dims.get('thickness')
+            if s.load_bearing and th is not None:
+                dim_checked += 1
+                dim_ok += 1 if float(th) >= self._MIN_STRUCT_THICK else 0
+            if 'foundation' in (s.name or '').lower():
+                depth = dims.get('depth')
+                if depth is not None:
+                    dim_checked += 1
+                    dim_ok += 1 if float(depth) >= self._MIN_FOUNDATION_DEPTH else 0
+        dimensional = (dim_ok / dim_checked) if dim_checked else 1.0
+        details['dimensional_feasibility'] = round(dimensional, 3)
 
+        # 3) Span feasibility — rooms whose shorter side exceeds the max
+        #    unsupported span need intermediate support; penalise them.
+        rooms = list(node.layout.rooms.values()) if node.layout and node.layout.rooms else []
+        if rooms:
+            within = 0
+            for r in rooms:
+                short = min(getattr(r, 'width', 0) or 0, getattr(r, 'length', 0) or 0)
+                # width/length may be 0 pre-placement; treat unknown as OK
+                within += 1 if (short == 0 or short <= self._MAX_SPAN) else 0
+            span = within / len(rooms)
+        else:
+            span = 1.0
+        details['span_feasibility'] = round(span, 3)
+
+        # 4) Load path — a feasible building needs a foundation and vertical
+        #    load-bearing elements.
+        has_foundation = any('foundation' in (s.name or '').lower() or _stype(s) == 'foundation'
+                             for s in structs)
+        has_vertical = any(s.load_bearing and _stype(s) in ('wall', 'column', '')
+                           for s in structs)
+        load_path = 1.0 if (has_foundation and has_vertical) else (0.7 if (has_foundation or has_vertical) else 0.4)
+        details['load_path'] = load_path
+
+        score = (0.35 * material_validity + 0.25 * dimensional
+                 + 0.20 * span + 0.20 * load_path)
         score = float(np.clip(score, 0.0, 1.0))
+        details['composite'] = round(score, 3)
+        details['total_structures'] = len(structs)
         return score, details
 
     def _score_layout(self, node: FBSLLayoutNode) -> Tuple[float, Dict]:
