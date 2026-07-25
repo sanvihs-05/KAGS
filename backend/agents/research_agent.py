@@ -65,6 +65,14 @@ class ResearchAgent:
                                 'similarity': float(r.get('score') or 0.0),
                                 'plan_id': meta.get('plan_id'),
                                 'room_type': meta.get('room_type'),
+                                # ✅ Propagate the precedent's real area so
+                                # reconcile_areas_with_precedents() can ground
+                                # room sizing in it. The CubiCasa store exposes
+                                # 'area' (m²); the legacy store had none, so
+                                # this stays None there and reconciliation is a
+                                # safe no-op.
+                                'area': meta.get('area', meta.get('area_m2')),
+                                'neighbors': meta.get('neighbors'),
                                 'original_text': meta.get('text'),
                                 'translated_text': meta.get('translated'),
                                 'function': meta.get('function')

@@ -1,3 +1,8 @@
+import os
+# OpenMP guard — MUST precede the faiss import below (see embedding_loader.py).
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+
 from pathlib import Path
 import json
 import numpy as np
@@ -45,7 +50,13 @@ class FaissIndexManager:
         if embs is None or len(embs) == 0:
             raise ValueError("No embeddings available to build index")
 
-        embs = np.asarray(embs, dtype='float32')
+        # np.array(copy=True) forces a WRITABLE, C-contiguous float32 buffer.
+        # The loader memory-maps the .npy read-only (mmap_mode='r'); passing that
+        # straight to faiss.normalize_L2 (in-place write) or index.add segfaults.
+        # np.asarray was a silent no-op for an already-float32 store (this one),
+        # so only a float64 store happened to dodge the crash by being converted.
+        embs = np.array(embs, dtype='float32', copy=True)
+        embs = np.ascontiguousarray(embs)
         self.index_dim = embs.shape[1]
 
         # Use inner-product on normalized vectors to perform cosine similarity
@@ -64,6 +75,11 @@ class FaissIndexManager:
                 self.meta.append({
                     'plan_id': m.get('plan_id'),
                     'room_type': m.get('room_type'),
+                    # ✅ carry the real precedent area (CubiCasa store) through so
+                    # the Research Agent can ground room sizing in it. Absent in
+                    # the legacy token store -> stays None there (safe no-op).
+                    'area': m.get('area', m.get('area_m2')),
+                    'neighbors': m.get('neighbors'),
                     'text': m.get('text'),
                     'translated': m.get('translated'),
                     'function': m.get('function'),

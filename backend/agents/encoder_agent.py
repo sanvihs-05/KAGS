@@ -587,6 +587,16 @@ Extract all spatial information and return as JSON."""
                     'orientation': orientation
                 }
             )
+            # ✅ Attach a query embedding so the Research Agent's precedent
+            # retrieval actually fires. Without this the encoding path left
+            # function.embedding = None and every FAISS search was skipped
+            # (0 precedents on every run). The query text mirrors the
+            # precedent-record style used when the CubiCasa RAG store was
+            # built ("<type> of <area> square metres"), so same-type,
+            # similar-size real rooms rank highest.
+            function.embedding = self._embed_query(
+                f"{room_type.replace('_', ' ')} of {area_preferred:.0f} square metres"
+            )
             node.add_function(function)
             
             # Create Behaviors (area + specific requirements)
@@ -767,6 +777,23 @@ Extract all spatial information and return as JSON."""
                     'strength': a.get('strength', 'medium'),
                 })
         return resolved
+
+    def _embed_query(self, text: str):
+        """Encode a room query into the same 384-dim space as the RAG store.
+        Returns None on any failure (retrieval simply stays skipped, as before)."""
+        try:
+            model = getattr(self.vector_store, 'embedding_model', None)
+            if model is None:
+                fe = getattr(self.vector_store, 'finnish_embeddings', None)
+                model = getattr(fe, 'embedding_model', None)
+            if model is None:
+                return None
+            import numpy as np
+            vec = model.encode(text)
+            return np.asarray(vec, dtype='float32')
+        except Exception as e:
+            logger.debug(f"Query embedding failed for {text!r}: {e}")
+            return None
 
     def _get_function_category(self, room_type: str) -> FunctionCategory:
         """Map room type to function category"""

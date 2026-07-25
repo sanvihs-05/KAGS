@@ -15,12 +15,17 @@ Usage:
 Optional flags:
   --got_delta 0.01 --got_patience 2 --got_selection_metric composite
 """
+import os
+# OpenMP guard — set before ANY heavy import (torch/faiss link colliding OpenMP
+# runtimes; see backend/utils/embedding_loader.py). Entry-point belt-and-suspenders.
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+
 import argparse
 import asyncio
 import json
 import shutil
 from pathlib import Path
-import os
 import sys
 import textwrap
 
