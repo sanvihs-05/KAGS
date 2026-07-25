@@ -360,30 +360,108 @@ class ScoringAgent:
 
         return score, details
 
+    # Envelope U-values (W/m²K) — mirrors BehaviorCalculator.material_properties
+    # so thermal reasoning is consistent across the pipeline. Lower U = better
+    # insulated = less operational heating energy (matters most in a cold /
+    # Finnish climate). 'embodied' ranks embodied carbon (0 low … 1 high).
+    _SUST_MATERIALS = {
+        'insulation':          {'u': 0.04, 'embodied': 0.2},
+        'gypsum_board':        {'u': 0.80, 'embodied': 0.3},
+        'wood':                {'u': 1.30, 'embodied': 0.1},
+        'timber':              {'u': 1.30, 'embodied': 0.1},
+        'bamboo':              {'u': 1.30, 'embodied': 0.05},
+        'recycled':            {'u': 1.00, 'embodied': 0.1},
+        'brick':               {'u': 1.70, 'embodied': 0.6},
+        'glazing':             {'u': 1.40, 'embodied': 0.5},
+        'glass':               {'u': 2.80, 'embodied': 0.5},
+        'concrete':            {'u': 2.00, 'embodied': 0.9},
+        'reinforced_concrete': {'u': 2.00, 'embodied': 0.95},
+        'steel':               {'u': 5.00, 'embodied': 0.85},
+    }
+    _U_GOOD, _U_POOR = 0.15, 1.20          # envelope U-value reference band
+    _GLAZING_OPT = (0.12, 0.22)            # cold-climate window-ratio optimum
+
     def _score_sustainability(self, node: FBSLLayoutNode) -> Tuple[float, Dict]:
-        """Score sustainability"""
-        score = 0.5  # Default neutral baseline
-        details: Dict[str, Any] = {'message': 'Basic sustainability assessment'}
+        """Score sustainability from the design's ACTUAL envelope physics and
+        geometry (was a flat 0.5 + rarely-triggered metadata bonuses).
 
-        # Check metadata for sustainability hints
-        if 'natural_light_access' in node.metadata:
-            score += 0.05
-            details['natural_light'] = True
+        S_sust = 0.35·envelope_thermal + 0.25·form_factor
+               + 0.15·glazing_fit + 0.15·material_carbon + 0.10·passive
 
-        if 'energy_efficiency' in node.metadata:
-            score += 0.05
-            details['energy_efficient'] = True
+        Every term is computed from the node itself, so different designs earn
+        different sustainability scores — and it is now layout-coupled (compact
+        plans lose less heat per unit floor area)."""
+        details: Dict[str, Any] = {}
 
-        # Check structures for sustainable materials
-        if node.structures:
-            sustainable_materials = ['wood', 'bamboo', 'recycled']
-            has_sustainable = any(
-                any(mat in (s.material_type or "").lower() for mat in sustainable_materials)
-                for s in node.structures.values()
-            )
-            if has_sustainable:
-                score += 0.1
-                details['sustainable_materials'] = True
+        def _mat(name):
+            n = (name or '').lower()
+            for key, props in self._SUST_MATERIALS.items():
+                if key in n:
+                    return props
+            return {'u': 2.0, 'embodied': 0.7}  # unknown → assume mediocre
 
+        structs = list(node.structures.values()) if node.structures else []
+
+        # 1) Envelope thermal quality — area-weighted mean U of envelope elements
+        env = [s for s in structs
+               if getattr(s, 'category', '') == 'envelope'
+               or any(k in (s.name or '').lower() for k in ('wall', 'roof', 'floor', 'foundation'))]
+        if env:
+            tot_u = tot_w = 0.0
+            for s in env:
+                w = (s.dimensions or {}).get('area', 1.0) or 1.0
+                tot_u += _mat(s.material_type)['u'] * w
+                tot_w += w
+            mean_u = tot_u / max(tot_w, 1e-9)
+            thermal = float(np.clip((self._U_POOR - mean_u) / (self._U_POOR - self._U_GOOD), 0.0, 1.0))
+            details['mean_envelope_u'] = round(mean_u, 2)
+        else:
+            thermal = 0.5
+        details['envelope_thermal'] = round(thermal, 3)
+
+        # 2) Form factor — a compact footprint has less heat-losing envelope per
+        #    floor area. Reuse the layout compactness (min(W,H)/max(W,H)).
+        form = float(getattr(node.layout, 'compactness_score', 0.5) or 0.5) if node.layout else 0.5
+        details['form_factor'] = round(form, 3)
+
+        # 3) Glazing appropriateness — window ratio near the cold-climate optimum
+        ratios = [(s.dimensions or {}).get('window_ratio') for s in structs
+                  if s.dimensions and 'window_ratio' in s.dimensions]
+        ratios = [float(r) for r in ratios if r is not None]
+        if ratios:
+            wr = sum(ratios) / len(ratios)
+            lo, hi = self._GLAZING_OPT
+            if lo <= wr <= hi:
+                glazing = 1.0
+            else:
+                d = (lo - wr) if wr < lo else (wr - hi)
+                glazing = float(np.clip(1.0 - d / 0.15, 0.0, 1.0))
+            details['mean_window_ratio'] = round(wr, 3)
+        else:
+            glazing = 0.5
+        details['glazing_fit'] = round(glazing, 3)
+
+        # 4) Material embodied carbon — area-weighted (lower embodied = better)
+        if structs:
+            tot_e = tot_w = 0.0
+            for s in structs:
+                w = (s.dimensions or {}).get('area', 1.0) or 1.0
+                tot_e += _mat(s.material_type)['embodied'] * w
+                tot_w += w
+            material = float(np.clip(1.0 - tot_e / max(tot_w, 1e-9), 0.0, 1.0))
+        else:
+            material = 0.5
+        details['material_carbon'] = round(material, 3)
+
+        # 5) Passive systems — natural ventilation (no mechanical MEP) is more
+        #    sustainable than mechanical conditioning.
+        is_natural = (node.metadata or {}).get('ventilation_strategy') == 'natural'
+        has_mep = any(getattr(s.structure_type, 'value', '') == 'mep' for s in structs)
+        passive = 1.0 if (is_natural or not has_mep) else 0.5
+        details['passive'] = passive
+
+        score = (0.35 * thermal + 0.25 * form + 0.15 * glazing
+                 + 0.15 * material + 0.10 * passive)
         score = float(np.clip(score, 0.0, 1.0))
+        details['composite'] = round(score, 3)
         return score, details
