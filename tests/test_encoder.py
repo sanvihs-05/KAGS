@@ -58,6 +58,41 @@ def test_zero_area_from_llm_is_defaulted():
     assert by['kitchen']['area_max'] > 0
 
 
+def test_essential_rooms_inferred_for_vague_dwelling_brief():
+    """'A small 2-bedroom apartment' names only bedrooms; a real apartment
+    implies a kitchen, bathroom, and living room even when unstated."""
+    program = {'rooms': [
+        {'type': 'bedroom', 'name': 'Bedroom', 'area_min': 12, 'area_max': 16,
+         'area_preferred': 14, 'requirements': [], 'orientation': 'any'},
+        {'type': 'bedroom', 'name': 'Bedroom 2', 'area_min': 12, 'area_max': 16,
+         'area_preferred': 14, 'requirements': [], 'orientation': 'any'},
+    ], 'adjacencies': [], 'constraints': [], 'priorities': []}
+    out = enc._ensure_essential_rooms(program, "A small 2-bedroom apartment.")
+    types = {r['type'] for r in out['rooms']}
+    assert {'kitchen', 'bathroom', 'living_room'} <= types
+    assert sum(1 for r in out['rooms'] if r['type'] == 'bedroom') == 2, \
+        "existing rooms must not be duplicated or removed"
+
+
+def test_essential_rooms_not_added_for_non_dwelling_brief():
+    program = {'rooms': [
+        {'type': 'office', 'name': 'Office', 'area_min': 10, 'area_max': 14,
+         'area_preferred': 12, 'requirements': [], 'orientation': 'any'},
+    ], 'adjacencies': [], 'constraints': [], 'priorities': []}
+    out = enc._ensure_essential_rooms(program, "A single office room for rent.")
+    assert len(out['rooms']) == 1, "must not inject rooms into a non-dwelling brief"
+
+
+def test_essential_rooms_skipped_when_already_present():
+    program = {'rooms': [
+        {'type': 'kitchen', 'name': 'Kitchen', 'area_min': 14, 'area_max': 18,
+         'area_preferred': 16, 'requirements': [], 'orientation': 'any'},
+    ], 'adjacencies': [], 'constraints': [], 'priorities': []}
+    out = enc._ensure_essential_rooms(program, "A studio apartment with a kitchen.")
+    kitchens = [r for r in out['rooms'] if r['type'] == 'kitchen']
+    assert len(kitchens) == 1, "must not duplicate an already-stated essential"
+
+
 def test_parse_total_area():
     assert EncoderAgent._parse_total_area("Total area 210-250 sqm.") == (210.0, 250.0)
     lo, hi = EncoderAgent._parse_total_area("a home of about 200 square metres")

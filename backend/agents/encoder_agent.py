@@ -217,7 +217,13 @@ class EncoderAgent:
         spatial_program = self._extract_spatial_program_with_llm(user_input, context)
         logger.info(f"✓ LLM extracted: {len(spatial_program.get('rooms', []))} rooms, "
                    f"{len(spatial_program.get('adjacencies', []))} adjacencies")
-        
+
+        # ✅ Complete a vague dwelling brief: infer any missing essential room
+        # (kitchen/bathroom/living room) before the node is built, so "a small
+        # 2-bedroom apartment" becomes a real apartment rather than "2 bedrooms,
+        # nothing else". No-op for briefs that already name these rooms.
+        spatial_program = self._ensure_essential_rooms(spatial_program, user_input)
+
         # Step 2: Create base FBSL node from extracted program
         logger.info("🗂️ Step 2: Creating FBSL node from spatial program...")
         node = self._create_node_from_spatial_program(spatial_program, user_input)
@@ -487,6 +493,47 @@ Extract all spatial information and return as JSON."""
         'sauna': (3.0, 8.0), 'closet': (2.0, 6.0), 'entry': (2.0, 8.0),
     }
     _DEFAULT_AREA_FALLBACK = (10.0, 15.0)
+
+    # A brief naming any of these clearly describes a DWELLING, so an implied
+    # kitchen/bathroom/living room can safely be inferred if missing.
+    _DWELLING_CUES = re.compile(
+        r'\b(apartment|house|home|flat|condo(?:minium)?|unit|studio|'
+        r'dwelling|residence|bungalow|villa|cottage)\b', re.I)
+    # Rooms every dwelling implies even when unstated, with sensible defaults.
+    # living_room's band is narrower than the stated-brief default (30-45) since
+    # this is an INFERRED room, not one the user actually asked to be large.
+    _ESSENTIAL_ROOMS = [
+        ('kitchen', (14.0, 18.0)),
+        ('bathroom', (4.0, 8.0)),
+        ('living_room', (22.0, 32.0)),
+    ]
+
+    @classmethod
+    def _ensure_essential_rooms(cls, program: Dict, user_input: str) -> Dict:
+        """A vague dwelling brief ("a small 2-bedroom apartment") often names
+        only the bedrooms, leaving the kitchen/bathroom/living room implicit --
+        a literal room-by-room extractor (LLM or rule-based) has no way to
+        infer them from names alone, so the design comes out as e.g. "2
+        bedrooms, nothing else": internally valid but not a real apartment.
+        If the brief clearly describes a DWELLING and the extracted program is
+        missing an essential, add it with a sensible default area. Guarded so
+        it never fires for a non-dwelling brief (e.g. a single-room commercial
+        space) and never touches essentials the brief already specified."""
+        if not cls._DWELLING_CUES.search(user_input or ''):
+            return program
+        present = {str(r.get('type', '')).lower() for r in program.get('rooms', [])}
+        added = []
+        for rtype, (lo, hi) in cls._ESSENTIAL_ROOMS:
+            if rtype not in present:
+                program.setdefault('rooms', []).append({
+                    'type': rtype, 'name': rtype.replace('_', ' ').title(),
+                    'area_min': lo, 'area_max': hi, 'area_preferred': (lo + hi) / 2,
+                    'requirements': [], 'orientation': 'any',
+                })
+                added.append(rtype)
+        if added:
+            logger.info(f"  ✓ Inferred missing essential rooms for a dwelling brief: {added}")
+        return program
 
     def _validate_spatial_program(self, program: Dict) -> Dict:
         """Validate and normalize spatial program from LLM"""
