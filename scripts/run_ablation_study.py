@@ -162,8 +162,8 @@ async def run_one(scenario_key: str, brief: str, config_name: str) -> Dict[str, 
         return {
             "config": config_name, "composite": None, "functional": None,
             "behavioral": None, "structural": None, "layout": None,
-            "sustainability": None, "n_prototypes": 0, "time_s": round(elapsed, 2),
-            "error": result.get("error"),
+            "sustainability": None, "top_variant": None, "n_prototypes": 0,
+            "time_s": round(elapsed, 2), "error": result.get("error"),
         }
 
     designs = result.get("designs", [])
@@ -176,6 +176,13 @@ async def run_one(scenario_key: str, brief: str, config_name: str) -> Dict[str, 
         "structural": round(top.get("structural_feasibility", 0.0), 4),
         "layout": round(top.get("layout_efficiency", 0.0), 4),
         "sustainability": round(top.get("sustainability", 0.0), 4),
+        # Which named strategy won under this condition -- ablating one
+        # component can change which GoT variant ranks #1, and that different
+        # winner can carry different structural/layout properties for reasons
+        # unrelated to the component being ablated. Recording this lets a
+        # reader separate "the component's direct effect" from "a different
+        # design won" when interpreting cross-arm deltas.
+        "top_variant": designs[0].get("variant_type", "N/A") if designs else None,
         "n_prototypes": len(designs),
         "time_s": round(elapsed, 2),
     }
