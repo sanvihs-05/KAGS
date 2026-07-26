@@ -1,5 +1,3 @@
-import chromadb
-from chromadb.config import Settings
 from sentence_transformers import SentenceTransformer
 import yaml
 import numpy as np
@@ -41,13 +39,7 @@ class VectorStoreManager:
 
         
         vs_config = config['vector_store']
-        
-        # Initialize ChromaDB for new embeddings
-        self.client = chromadb.Client(Settings(
-            persist_directory=vs_config['persist_directory'],
-            anonymized_telemetry=False
-        ))
-        
+
         # Initialize embedding model for new embeddings
         self.embedding_model = SentenceTransformer(
             vs_config['embedding_model']
@@ -178,28 +170,3 @@ class VectorStoreManager:
             return finnish_type
         
         return self.finnish_embeddings.translate_finnish_room_type(finnish_type)
-    
-    # Keep existing methods...
-    def get_or_create_collection(self, name: str):
-        return self.client.get_or_create_collection(name=name)
-    
-    def add_documents(self, collection_name: str, documents: List[str], 
-                     metadatas: List[Dict], ids: List[str]):
-        collection = self.get_or_create_collection(collection_name)
-        embeddings = self.embedding_model.encode(documents).tolist()
-        
-        collection.add(
-            embeddings=embeddings,
-            documents=documents,
-            metadatas=metadatas,
-            ids=ids
-        )
-    
-    def search(self, collection_name: str, query_text: str, n_results: int = 5):
-        collection = self.get_or_create_collection(collection_name)
-        query_embedding = self.embedding_model.encode([query_text]).tolist()
-        
-        return collection.query(
-            query_embeddings=query_embedding,
-            n_results=n_results
-        )
