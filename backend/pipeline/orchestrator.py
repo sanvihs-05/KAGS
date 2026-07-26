@@ -4,7 +4,6 @@ Pipeline Orchestrator with Graph of Thought integration
 Phase 4 Complete: Full FBSL Pipeline Convergence Loop
 - F → Be → S → Bs → L → Evaluation → Reformulation
 - Convergence checking: |S_composite(t) - S_composite(t-1)| < ε
-- Pareto optimality tracking
 """
 
 import logging
@@ -33,71 +32,12 @@ from ..core.design_signature import (
 logger = logging.getLogger(__name__)
 
 
-class ParetoFront:
-    """Tracks Pareto-optimal solutions for multi-objective optimization"""
-    
-    def __init__(self):
-        self.solutions: List[Dict[str, Any]] = []
-        
-    def add_solution(self, node: FBSLLayoutNode, scores: Dict[str, float]):
-        """
-        Add solution and update Pareto front
-        
-        A solution is Pareto-optimal if no other solution dominates it:
-        Pareto_Set = {x | ¬∃y : ∀i f_i(y) ≥ f_i(x) ∧ ∃j f_j(y) > f_j(x)}
-        """
-        solution = {
-            'node': node,
-            'scores': scores,
-            'objectives': [
-                scores.get('functional_adequacy', 0.0),
-                scores.get('behavioral_performance', 0.0),
-                scores.get('structural_feasibility', 0.0),
-                scores.get('layout_efficiency', 0.0),
-                scores.get('sustainability', 0.0)
-            ]
-        }
-        
-        # Check if new solution is dominated by existing solutions
-        is_dominated = False
-        for existing in self.solutions:
-            if self._dominates(existing['objectives'], solution['objectives']):
-                is_dominated = True
-                break
-        
-        if not is_dominated:
-            # Add new solution and remove dominated ones
-            self.solutions.append(solution)
-            self.solutions = [
-                s for s in self.solutions
-                if not self._dominates(solution['objectives'], s['objectives']) or s == solution
-            ]
-            
-            logger.debug(f"Pareto front updated: {len(self.solutions)} solutions")
-    
-    def _dominates(self, obj1: List[float], obj2: List[float]) -> bool:
-        """Check if obj1 dominates obj2 (all >= and at least one >)"""
-        all_geq = all(o1 >= o2 for o1, o2 in zip(obj1, obj2))
-        any_gt = any(o1 > o2 for o1, o2 in zip(obj1, obj2))
-        return all_geq and any_gt
-    
-    def get_best_solutions(self, top_k: int = 5) -> List[Dict[str, Any]]:
-        """Get top-k solutions from Pareto front by composite score"""
-        sorted_solutions = sorted(
-            self.solutions,
-            key=lambda s: s['scores'].get('composite', 0.0),
-            reverse=True
-        )
-        return sorted_solutions[:top_k]
-
-
 class PipelineOrchestrator:
     """
     Orchestrates the complete FBSL-KAGS pipeline with GoT
     
     Phase 4 Enhancements:
     - Full pipeline convergence loop
-    - Pareto optimality tracking
     - Layout generation integration
     - Behavior calculation with S → Bs transformation
     """
@@ -599,24 +539,19 @@ class PipelineOrchestrator:
                 alternatives = refined_alternatives
             
             # =================================================================
-            # PHASE 4: SCORING & PARETO OPTIMALITY
+            # PHASE 4: SCORING
             # =================================================================
-            logger.info("📊 Step 5: Scoring alternatives and building Pareto front...")
-            pareto_front = ParetoFront()
+            logger.info("📊 Step 5: Scoring alternatives...")
             scored_designs = []
-            
+
             for i, alt in enumerate(alternatives, 1):
                 scores = await self.scoring.score_node(alt)
                 scored_designs.append({
                     'node': alt,
                     'scores': scores
                 })
-                
-                # Add to Pareto front
-                pareto_front.add_solution(alt, scores['scores'])
-                
                 logger.info(f"   {i}/{len(alternatives)}: score={scores['scores']['composite']:.3f}")
-            
+
             # Sort by composite score
             scored_designs.sort(key=lambda x: x['scores']['scores']['composite'], reverse=True)
 
@@ -630,10 +565,7 @@ class PipelineOrchestrator:
                 scored_designs, key=lambda d: d['node']
             )
             logger.info("   ✓ Final ranking: diversity-greedy ordering applied")
-            
-            # Get Pareto-optimal solutions
-            pareto_solutions = pareto_front.get_best_solutions(top_k=len(alternatives))
-            
+
             # =================================================================
             # PHASE 5: STORE IN DATABASE
             # =================================================================
@@ -723,24 +655,9 @@ class PipelineOrchestrator:
                             ),
                             'convergence_iterations': d['node'].metadata.get('convergence_history', {}).get('iterations', 0),
                             'converged': d['node'].metadata.get('convergence_history', {}).get('converged', False),
-                            'is_pareto_optimal': any(
-                                ps['node'].node_id == d['node'].node_id
-                                for ps in pareto_solutions
-                            )
                         }
                     for d in scored_designs
                 ],
-                'pareto_front': {
-                    'size': len(pareto_solutions),
-                    'solutions': [
-                        {
-                            'node_id': ps['node'].node_id,
-                            'composite_score': ps['scores'].get('composite', 0.0),
-                            'objectives': ps['objectives']
-                        }
-                        for ps in pareto_solutions
-                    ]
-                },
                 'research_findings': {
                     'precedents_found': len(research_findings['similar_spaces']),
                     'recommendations': len(research_findings['recommendations'])
@@ -780,8 +697,7 @@ class PipelineOrchestrator:
             logger.info(f"✅ Pipeline complete in {processing_time:.2f}s")
             logger.info(f"   Generated {len(scored_designs)} designs")
             logger.info(f"   Top score: {scored_designs[0]['scores']['scores']['composite']:.3f}")
-            logger.info(f"   Pareto front: {len(pareto_solutions)} optimal solutions")
-            
+
             return result
             
         except Exception as e:

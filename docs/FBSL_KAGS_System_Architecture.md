@@ -537,9 +537,9 @@ a wall.
 - **Phase 4 — Refine & lay out.** For each candidate the convergence loop
   computes Bₛ, refines, generates the L (treemap + room-graph circulation), and
   re-scores until stable.
-- **Phase 5 — Output.** Re-score, build the Pareto front, apply diversity-greedy
-  ranking, select the top-k, and package each prototype (complete FBSL, all five
-  scores, layout SVG, adjacency graph, MD/HTML report).
+- **Phase 5 — Output.** Re-score, apply diversity-greedy ranking, select the
+  top-k, and package each prototype (complete FBSL, all five scores, layout SVG,
+  adjacency graph, MD/HTML report).
 
 ---
 

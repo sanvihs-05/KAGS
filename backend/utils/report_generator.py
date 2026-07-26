@@ -631,7 +631,6 @@ Total Functions: **{len(functions)}**
 **Status:**
 - Converged: {'✅ Yes' if proto.get('converged') else '❌ No'}
 - Convergence Iterations: {proto.get('convergence_iterations', 0)}
-- Pareto Optimal: {'✅ Yes' if proto.get('is_pareto_optimal') else '❌ No'}
 
 ---
 

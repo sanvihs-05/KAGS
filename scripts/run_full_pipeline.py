@@ -158,7 +158,6 @@ async def run_pipeline(args):
             'structures_count': design.get('structures_count', 0),
             'converged': design.get('converged', False),
             'convergence_iterations': design.get('convergence_iterations', 0),
-            'is_pareto_optimal': design.get('is_pareto_optimal', False)
         })
 
     # Generate project summary
@@ -195,7 +194,6 @@ async def run_pipeline(args):
         print(f"  Sustainability:   {scores.get('sustainability', 0.0):.3f}")
         print(f"  Variant Type:     {design.get('variant_type', 'N/A')}")
         print(f"  Converged:        {'✅ Yes' if design.get('converged') else '❌ No'}")
-        print(f"  Pareto Optimal:   {'✅ Yes' if design.get('is_pareto_optimal') else '❌ No'}")
         print()
 
     print("=" * 80)
@@ -272,7 +270,6 @@ def _generate_simple_fbsl_report(design, rank, project_name, md_path, html_path,
 | Converged | {'✅ Yes' if design.get('converged') else '❌ No'} |
 | Convergence Iterations | {design.get('convergence_iterations', 0)} |
 | Refinement Iterations | {design.get('refinement_iterations', 0)} |
-| Pareto Optimal | {'✅ Yes' if design.get('is_pareto_optimal') else '❌ No'} |
 
 ---
 
@@ -391,7 +388,6 @@ def _generate_project_summary(data, project_dir):
 **Status:**
 - Converged: {'✅ Yes' if proto.get('converged') else '❌ No'}
 - Convergence Iterations: {proto.get('convergence_iterations', 0)}
-- Pareto Optimal: {'✅ Yes' if proto.get('is_pareto_optimal') else '❌ No'}
 
 ---
 
