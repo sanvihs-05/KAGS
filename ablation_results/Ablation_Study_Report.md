@@ -117,26 +117,47 @@ Five named strategies give real geometric diversity (documented elsewhere in thi
 the single best-scoring design among them is not dramatically better than the Generalizer's direct
 decomposition for these particular briefs.
 
-**6. RAG retrieval shows no measurable composite benefit — and this is a metric-scope finding, not
-a defect.** In two of three scenarios, disabling RAG left composite *unchanged or marginally
-higher*. This is expected once you look at what RAG actually optimizes: `reconcile_areas_with_precedents`
-blends a stated area toward a real-precedent estimate (λ = 0.6) specifically to ground room sizes
-in what real Finnish dwellings use — a **realism** objective, clamped to the brief's own band so it
-can never move a design further from spec. It was never intended to raise the composite score, and
-the composite has no term that rewards "matches a real building." The correct evaluation of RAG's
-value is precedent fidelity (already verified separately: real bedrooms retrieved at 13.7–14.5 m²
-for a 14 m² query, real areas reconciled), not this study's composite metric — and that is stated
-here explicitly rather than left to look like a null result.
+**6. RAG retrieval shows no measurable composite benefit — traced to a verified, specific cause,
+not a defect.** In two of three scenarios, disabling RAG left composite *unchanged or marginally
+higher*. This was not left as a hand-wave: the mechanism is confirmed at the code level.
+`reconcile_areas_with_precedents` blends a room's stated area toward a similarity-weighted
+precedent estimate (`a* = λ·a_stated + (1−λ)·â_precedent`, λ = 0.6) and writes the result to
+`room.area` — but it does **not** update that room's paired area-behavior `target_value`, which was
+fixed once at encoding time. Verified directly: reconciling a 14 m² bedroom toward an 11.5 m²
+precedent moves `room.area` to 13.0 m² exactly as the formula predicts, while `target_value` stays
+at 14.0 — turning a clean actual/target ratio of 1.0 into 0.929, which *lowers* that behavior's
+`perf()` score even though the room is now sized more realistically. RAG's real, intended objective
+is precedent-grounded **realism** (already verified separately: real bedrooms retrieved at
+13.7–14.5 m² for a 14 m² query, and clamped to the brief's own band so it can never push a design
+out of spec) — it was never designed to raise composite, and this data confirms it mechanically
+cannot, because the one value it changes is scored against a target that doesn't move with it.
+
+**7. Naive layout placement has a second-order effect: it also dents structural feasibility.**
+The single-row grid gives rooms different width/length pairs than the zoned treemap, and on the
+larger scenarios this pushed some rooms' shorter side past the 6 m span-feasibility threshold —
+`structural` measurably dropped (0.940 → 0.915 on the townhouse, → 0.926 on the family home) purely
+as a side effect of the cruder placement, confirming S_s is genuinely layout-coupled rather than a
+constant that happens to sit at 0.94.
 
 ---
 
 ## Honest limitations of this study
 
 - **Single LLM extraction per cell.** Each configuration ran the encoder once; a different
-  Groq extraction of the same brief can itself shift room counts/areas slightly, which is the
-  likely source of the small "no change" negative deltas (RAG, GoT on the apartment scenario) —
-  they reflect extraction noise, not a real ordering reversal. Rows explicitly marked "no change"
-  should be read as *not distinguishable from zero* at this sample size.
+  Groq extraction of the same brief can itself shift room counts/areas slightly. This is the
+  likely source of the GoT-off sign flip on the apartment scenario specifically (the RAG sign
+  flips are *not* this — see finding 6, which traces that one to a verified, specific mechanism
+  instead). Rows not attributed to a specific mechanism above should be read as *not
+  distinguishable from zero* at this sample size, not as a real ordering reversal.
+- **Ablating one component can change which GoT variant wins, which can move OTHER sub-scores too.**
+  The reported numbers are the *top-ranked* design's sub-scores under each condition. Since
+  disabling a component changes every candidate's composite, it can shift which of the five named
+  strategies (or their Level-2 specialisations) ends up ranked #1 — and that different winning
+  design can have different structural/layout properties for reasons unrelated to the component
+  being ablated (e.g. `structural_efficiency`'s thinner partitions vs another strategy's). This
+  script did not record which `variant_type` won per cell, so this effect cannot be fully
+  separated from a component's direct effect in the current data — a concrete improvement for the
+  next run of this study would be to log `variant_type` per cell.
 - **n = 1 run per cell.** A production-grade ablation would repeat each cell multiple times and
   report a confidence interval; this study reports single real measurements, which is a large
   improvement over fabricated data but is still a point estimate, not a statistically robust one.
