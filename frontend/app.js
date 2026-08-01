@@ -97,14 +97,13 @@ function renderDesign(d, rank) {
     </div>`;
   }).join('');
 
-  const planId = `plan-${rank}`;
   // Prefer PNG (raster) prototypes; fall back to inline SVG.
   const fpPng = d.png_floor_plan, adjPng = d.png_adjacency;
   const fp = fpPng
     ? `<img class="plan-img" alt="Floor plan" src="${fpPng}">`
     : (d.svg_floor_plan || '');
   const adj = adjPng
-    ? `<img class="plan-img" alt="Adjacency graph" src="${adjPng}">`
+    ? `<img class="plan-img" alt="Connectivity graph" src="${adjPng}">`
     : (d.adjacency_svg || '');
   const hasPlan = !!fp;
   const hasAdj = !!adj;
@@ -132,13 +131,9 @@ function renderDesign(d, rank) {
     </div>
     <div class="meters">${meters}</div>
     ${(hasPlan || hasAdj) ? `
-      <div class="plan-tabs">
-        ${hasPlan ? `<button class="plan-tab active" data-view="${planId}-fp">Floor plan</button>` : ''}
-        ${hasAdj ? `<button class="plan-tab ${hasPlan ? '' : 'active'}" data-view="${planId}-adj">Adjacency</button>` : ''}
-      </div>
       <div class="plan-view">
-        ${hasPlan ? `<div class="svg-wrap" id="${planId}-fp">${fp}</div>` : ''}
-        ${hasAdj ? `<div class="svg-wrap" id="${planId}-adj" ${hasPlan ? 'hidden' : ''}>${adj}</div>` : ''}
+        ${hasPlan ? `<div class="plan-block"><div class="plan-cap">Floor plan</div><div class="svg-wrap">${fp}</div></div>` : ''}
+        ${hasAdj ? `<div class="plan-block"><div class="plan-cap">Connectivity graph</div><div class="svg-wrap">${adj}</div></div>` : ''}
       </div>` : '<div class="plan-view"><div class="svg-wrap empty">No layout generated</div></div>'}
     <div class="chips">${chips}</div>
   </article>`;
@@ -149,18 +144,6 @@ function renderDesigns(data, topK) {
   const designs = (data.designs || []).slice(0, topK);
   wrap.innerHTML = designs.map((d, i) => renderDesign(d, i + 1)).join('');
   $('designs-section').hidden = designs.length === 0;
-
-  // wire the floor-plan / adjacency tab switch
-  wrap.querySelectorAll('.plan-tab').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const card = btn.closest('.design');
-      card.querySelectorAll('.plan-tab').forEach((b) => b.classList.remove('active'));
-      card.querySelectorAll('.svg-wrap').forEach((w) => { w.hidden = true; });
-      btn.classList.add('active');
-      const target = card.querySelector(`#${CSS.escape(btn.dataset.view)}`);
-      if (target) target.hidden = false;
-    });
-  });
 }
 
 /* ── render: GoT prune chart ─────────────────────────────── */
