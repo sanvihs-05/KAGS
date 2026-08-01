@@ -1,71 +1,94 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>KAGS Pipeline Frontend</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FBSL-KAGS — Layout Generator</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <main class="container">
-    <h1>KAGS — Run Pipeline</h1>
-
-    <form id="pipeline-form">
-      <label>Project name (optional)
-        <input type="text" id="project_name" placeholder="my_project" />
-      </label>
-
-      <label>Requirements (text)
-        <textarea id="requirements" rows="4" placeholder="e.g. Compact 2BR apartment with daylight and separate workspace" required></textarea>
-      </label>
-
-      <div class="row">
-        <label>Top K to display
-          <input type="number" id="top_k" value="3" min="1" max="10" />
-        </label>
-
-        <label>Max alternatives
-          <input type="number" id="max_alternatives" value="5" min="1" max="20" />
-        </label>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark">◧</div>
+        <div class="brand-text">
+          <h1>FBSL&#8209;KAGS</h1>
+          <p>Knowledge-augmented layout generation &middot; Function &middot; Behavior &middot; Structure &middot; Layout</p>
+        </div>
       </div>
+      <button id="theme-toggle" class="theme-toggle" title="Toggle light / dark" aria-label="Toggle theme">
+        <span class="theme-icon">◐</span>
+      </button>
+    </header>
 
-      <details>
-        <summary>GoT params (optional)</summary>
-        <div class="row">
-          <label>got_delta
-            <input id="got_delta" type="number" step="0.001" placeholder="e.g. 0.01" />
-          </label>
+    <!-- ─────────── Input ─────────── -->
+    <section class="controls card">
+      <form id="pipeline-form" autocomplete="off">
+        <div class="field">
+          <label for="requirements">Design brief</label>
+          <textarea id="requirements" rows="4"
+            placeholder="e.g. Design a 3-bedroom townhouse with two bathrooms, an open-plan kitchen and living room, and a small home office. Prioritise natural light and acoustic separation. Total area around 140 sqm."></textarea>
+        </div>
 
-          <label>got_patience
-            <input id="got_patience" type="number" min="1" placeholder="e.g. 2" />
-          </label>
+        <div class="field-row">
+          <div class="field">
+            <label for="project_name">Project name <span class="opt">optional</span></label>
+            <input id="project_name" type="text" placeholder="Untitled project" />
+          </div>
+          <div class="field field-narrow">
+            <label for="max_alternatives">Prototypes</label>
+            <input id="max_alternatives" type="number" min="1" max="12" value="5" />
+          </div>
+          <div class="field field-narrow">
+            <label for="top_k">Show top</label>
+            <input id="top_k" type="number" min="1" max="12" value="3" />
+          </div>
+        </div>
 
-          <label>got_max_nodes
-            <input id="got_max_nodes" type="number" min="1" placeholder="e.g. 50" />
-          </label>
-
-          <label>got_selection_metric
-            <select id="got_selection_metric">
-              <option value="composite">composite</option>
-              <option value="quality">quality</option>
-            </select>
+        <div class="actions">
+          <button type="submit" id="run-btn" class="btn btn-primary">
+            <span class="btn-label">Generate layouts</span>
+          </button>
+          <button type="button" id="sample-btn" class="btn btn-ghost">Load sample run</button>
+          <label class="chk">
+            <input type="checkbox" id="use_got" checked />
+            <span>Graph-of-Thoughts exploration</span>
           </label>
         </div>
-      </details>
+        <p class="hint">A live run executes the full multi-agent pipeline and can take <strong>30&#8202;s&ndash;2&#8202;min</strong>. The sample run loads a previously captured real result instantly.</p>
+      </form>
+    </section>
 
-      <div class="actions">
-        <button type="submit">Run pipeline</button>
+    <!-- ─────────── Status / progress ─────────── -->
+    <div id="status" class="status" hidden></div>
+
+    <!-- ─────────── Summary tiles ─────────── -->
+    <section id="summary" class="summary" hidden></section>
+
+    <!-- ─────────── Top outputs ─────────── -->
+    <section id="designs-section" hidden>
+      <div class="section-head">
+        <h2>Top outputs</h2>
+        <p class="section-sub">Ranked prototypes (diversity-greedy ordering). Each is a complete FBSL design with a generated floor plan.</p>
       </div>
-    </form>
+      <div id="designs" class="designs"></div>
+    </section>
 
-    <div id="status" class="status"></div>
+    <!-- ─────────── GoT exploration ─────────── -->
+    <section id="got-section" hidden>
+      <div class="section-head">
+        <h2>Graph-of-Thoughts exploration</h2>
+        <p class="section-sub">Every candidate the engine scored, what the <strong>0.70&#8202;&times;&#8202;max</strong> prune kept vs. dropped, and which high-scorers were merged into an aggregated hybrid. All values measured from this run.</p>
+      </div>
+      <div id="got" class="got"></div>
+    </section>
 
-    <section id="results" class="results"></section>
-
-    <footer>
-      <p>Backend endpoint: <code id="api-url">/pipeline/run</code> — change `app.js` if different host/port</p>
+    <footer class="foot">
+      <span>FBSL&#8209;KAGS</span>
+      <span class="dot">&middot;</span>
+      <span>FastAPI &middot; NetworkX &middot; FAISS &middot; Sentence-Transformers</span>
     </footer>
-  </main>
+  </div>
 
   <script src="app.js"></script>
 </body>
