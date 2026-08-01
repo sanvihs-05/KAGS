@@ -476,8 +476,10 @@ C_overall = 0.4·C_req + 0.6·C_fbsl
 
 **Why 0.4/0.6:** the extracted FBSL structure (room count, behavior diversity,
 interdependencies) is a more reliable complexity signal than raw text, so it is
-weighted higher. Complexity selects scale factors applied to a base of 5
-prototypes:
+weighted higher.
+
+`C_overall` selects a **tier scale** applied to base parameters (depth 2,
+breadth 3, nodes 50, prototypes 5):
 
 | Level | depth | breadth | nodes | prototypes |
 |---|---|---|---|---|
@@ -486,8 +488,31 @@ prototypes:
 | High (0.6–0.8) | ×1.3 | ×1.3 | ×1.5 | ×1.3 |
 | Very High (≥ 0.8) | ×1.5 | ×1.5 | ×2.0 | ×1.5 |
 
+A **second multiplier, `component_scale`, then scales breadth, nodes and
+prototypes** (not depth) by the number of rooms + functions — a brief with the
+same overall score but more parts warrants a wider search:
+
+```
+component_scale     = min(1.5, 1 + (room_count + function_count) / 20)
+target_prototypes   = max(3,  int(5 × prototypes_tier_scale × component_scale))
+breadth             = max(2,  int(3 × breadth_tier_scale   × component_scale))
+max_nodes           = max(20, int(50 × nodes_tier_scale    × component_scale))
+depth               = max(1,  int(2 × depth_tier_scale))          # no component_scale
+```
+
 **Why scale with complexity:** a studio needs little exploration; a large
 multi-zone brief warrants a deeper, wider search and more candidate prototypes.
+
+`target_prototypes` is the count when the request leaves `max_alternatives`
+unset; an explicit `max_alternatives` instead caps the candidate pool directly.
+The kept set is then handed to aggregation, which may add **one** merged hybrid,
+so the final prototype count is `target_prototypes` (or fewer, after brief-gate
+and diversity pruning) **+ 1** when a hybrid is produced.
+
+*Worked example (the shipped sample):* Medium brief, `C_overall ≈ 0.39`,
+8 rooms + 8 functions → tier ×1.0, `component_scale = min(1.5, 1 + 16/20) = 1.5`
+→ `target_prototypes = int(5 × 1.0 × 1.5) = 7`; pruning keeps 7, aggregation adds
+1 hybrid → **8 designs returned**.
 
 **Final ranking** is diversity-greedy: at each position the most novel remaining
 design (new strategy family / footprint class / signature) is chosen, best score
