@@ -563,8 +563,10 @@ a wall.
   computes Bₛ, refines, generates the L (treemap + room-graph circulation), and
   re-scores until stable.
 - **Phase 5 — Output.** Re-score, apply diversity-greedy ranking, select the
-  top-k, and package each prototype (complete FBSL, all five scores, layout SVG,
-  adjacency graph, MD/HTML report).
+  top-k, and package each prototype (complete FBSL, all five scores, a
+  matplotlib-rendered **PNG** floor plan and adjacency graph — embedded in the
+  API result as `data:` URIs, with the SVG layout retained as a fallback —
+  and an MD/HTML report).
 
 ---
 

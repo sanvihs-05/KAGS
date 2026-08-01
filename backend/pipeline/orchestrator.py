@@ -688,7 +688,28 @@ class PipelineOrchestrator:
             # PHASE 6: PREPARE RESULTS
             # =================================================================
             processing_time = (datetime.now() - start_time).total_seconds()
-            
+
+            # Render each final prototype's floor plan + adjacency graph as
+            # in-memory PNG data URIs (matplotlib), so the API result carries
+            # raster prototypes the UI can show as <img> and the offline sample
+            # stays self-contained. Failure for one design must not fail the run.
+            png_by_node = {}
+            try:
+                enhanced_viz = getattr(self.layout_agent, 'enhanced_visualizer', None)
+            except Exception:
+                enhanced_viz = None
+            if enhanced_viz is not None:
+                for d in scored_designs:
+                    node = d['node']
+                    if getattr(node, 'layout', None) is None:
+                        continue
+                    try:
+                        png_by_node[node.node_id] = enhanced_viz.render_datauris(
+                            node.layout, project_name or 'design', node.node_id
+                        )
+                    except Exception as e:
+                        logger.warning(f"   ⚠ PNG render failed for {node.node_id[:8]}: {e}")
+
             result = {
                 'success': True,
                 'project_id': problem_node.project_id or problem_node.node_id,
@@ -715,6 +736,10 @@ class PipelineOrchestrator:
                             'has_adjacency_svg': bool(getattr(d['node'].layout, 'adjacency_svg', None)),
                             'svg_floor_plan': getattr(d['node'].layout, 'svg_floor_plan', None) if d['node'].layout else None,
                             'adjacency_svg': getattr(d['node'].layout, 'adjacency_svg', None) if d['node'].layout else None,
+                            # Raster (PNG data URI) prototypes — the UI's primary
+                            # visual; SVGs above remain as a fallback.
+                            'png_floor_plan': png_by_node.get(d['node'].node_id, {}).get('floor_plan'),
+                            'png_adjacency': png_by_node.get(d['node'].node_id, {}).get('adjacency'),
                             'refinement_iterations': len(
                                 d['node'].metadata.get('refinement_history', {}).get('iterations', [])
                             ),

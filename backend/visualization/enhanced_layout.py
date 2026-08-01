@@ -23,6 +23,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+import base64
+import io
+
+import matplotlib
+matplotlib.use("Agg")  # headless raster backend — safe under the API server / worker threads
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
@@ -272,6 +277,84 @@ class EnhancedLayoutVisualizer:
         adjacency_path = self._generate_adjacency_graph(layout_data, project_name, node_id)
 
         return {"svg_path": str(svg_path), "adjacency_path": str(adjacency_path)}
+
+    def render_datauris(self, layout, project_name: str, node_id: str,
+                        dpi: int = 110) -> Dict[str, str]:
+        """Render the floor plan and adjacency graph as in-memory PNG
+        ``data:`` URIs — no files written to visual_outputs/.
+
+        Used to embed raster prototypes directly in the pipeline result, so the
+        UI can show PNGs (matplotlib-rendered, the same styling as the saved
+        visual_outputs PNGs) and the offline sample stays self-contained.
+        Returns ``{'floor_plan': dataURI, 'adjacency': dataURI}`` (missing keys
+        if a panel can't be built).
+        """
+        room_adapter = LayoutRoomAdapter(layout)
+        rooms = room_adapter.extract_rooms()
+        if not rooms:
+            return {}
+
+        graph = nx.Graph()
+        for room in rooms:
+            graph.add_node(room["room_id"], room_type=room["room_type"],
+                           area=room["area"], x=room["x"], y=room["y"],
+                           width=room["width"], height=room["height"])
+        self._add_adjacency_edges(graph, rooms)
+        self._ensure_connectivity(graph, rooms)
+
+        title = f"{project_name.replace('_', ' ').title()} — {node_id[:8]}"
+
+        def _to_datauri(fig) -> str:
+            buf = io.BytesIO()
+            fig.savefig(buf, format="png", dpi=dpi, bbox_inches="tight",
+                        facecolor="white")
+            plt.close(fig)
+            buf.seek(0)
+            return "data:image/png;base64," + base64.b64encode(buf.read()).decode("ascii")
+
+        out: Dict[str, str] = {}
+        try:
+            fig_fp, ax_fp = plt.subplots(figsize=(8, 6))
+            self._plot_floor_plan(ax_fp, graph, title)
+            out["floor_plan"] = _to_datauri(fig_fp)
+        except Exception:
+            plt.close("all")
+
+        try:
+            fig_adj, ax_adj = plt.subplots(figsize=(8, 6))
+            self._plot_graph(ax_adj, graph)
+            out["adjacency"] = _to_datauri(fig_adj)
+        except Exception:
+            plt.close("all")
+
+        return out
+
+    def _plot_floor_plan(self, ax, graph: nx.Graph, title: str) -> None:
+        """Single-panel architectural floor plan: colored rooms with name + area."""
+        ax.set_title(title, fontsize=12, fontweight="bold")
+        xs, ys, xe, ye = [], [], [], []
+        for _, data in graph.nodes(data=True):
+            color = self.config.room_colors.get(data["room_type"],
+                                                self.config.room_colors["default"])
+            ax.add_patch(plt.Rectangle(
+                (data["x"], data["y"]), data["width"], data["height"],
+                edgecolor="#2C3E50", facecolor=color, alpha=0.88, linewidth=1.6,
+            ))
+            cx = data["x"] + data["width"] / 2
+            cy = data["y"] + data["height"] / 2
+            ax.text(cx, cy - 0.18, data["room_type"].replace("_", " ").title(),
+                    ha="center", va="center", fontsize=8, fontweight="bold", color="white")
+            ax.text(cx, cy + 0.42, f"{data['area']:.1f} m²",
+                    ha="center", va="center", fontsize=6.5, color="#f4f4f4")
+            xs.append(data["x"]); ys.append(data["y"])
+            xe.append(data["x"] + data["width"]); ye.append(data["y"] + data["height"])
+        if xs:
+            pad = 0.5
+            ax.set_xlim(min(xs) - pad, max(xe) + pad)
+            ax.set_ylim(min(ys) - pad, max(ye) + pad)
+        ax.set_aspect("equal")
+        ax.invert_yaxis()
+        ax.axis("off")
 
     def _calculate_bounds(self, rooms: List[Dict[str, Any]]) -> Dict[str, float]:
         min_x = min(room["x"] for room in rooms)
