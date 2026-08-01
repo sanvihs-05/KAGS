@@ -244,6 +244,7 @@ section[hidden] { display: none; }
   border: 1px solid var(--border); overflow: auto;
 }
 .svg-wrap svg { display: block; width: 100%; height: auto; max-width: 100%; }
+.svg-wrap .plan-img { display: block; width: 100%; height: auto; max-width: 100%; border-radius: 6px; }
 .svg-wrap.empty { color: var(--muted); font-size: 12.5px; text-align: center; padding: 28px; background: var(--surface-2); }
 
 .chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 16px 16px; }

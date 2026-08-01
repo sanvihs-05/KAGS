@@ -68,7 +68,7 @@ function renderSummary(data) {
     `<div class="tile"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div>${u ? `<div class="u">${esc(u)}</div>` : ''}</div>`);
 
   tile('Method', data.method === 'Graph of Thought' ? 'Graph of Thought' : 'Traditional');
-  tile('Prototypes', (data.designs || []).length, 'generated');
+  tile('Designs returned', (data.designs || []).length, 'after prune + hybrid');
   if (gg) {
     const dropped = gg.prune.n_scored - gg.prune.n_kept;
     tile('Candidates', gg.prune.n_scored, `${gg.prune.n_kept} kept · ${dropped} dropped`);
@@ -98,8 +98,16 @@ function renderDesign(d, rank) {
   }).join('');
 
   const planId = `plan-${rank}`;
-  const hasPlan = !!d.svg_floor_plan;
-  const hasAdj = !!d.adjacency_svg;
+  // Prefer PNG (raster) prototypes; fall back to inline SVG.
+  const fpPng = d.png_floor_plan, adjPng = d.png_adjacency;
+  const fp = fpPng
+    ? `<img class="plan-img" alt="Floor plan" src="${fpPng}">`
+    : (d.svg_floor_plan || '');
+  const adj = adjPng
+    ? `<img class="plan-img" alt="Adjacency graph" src="${adjPng}">`
+    : (d.adjacency_svg || '');
+  const hasPlan = !!fp;
+  const hasAdj = !!adj;
 
   const chips = [
     `<span class="chip">${d.functions_count ?? 0} functions</span>`,
@@ -129,8 +137,8 @@ function renderDesign(d, rank) {
         ${hasAdj ? `<button class="plan-tab ${hasPlan ? '' : 'active'}" data-view="${planId}-adj">Adjacency</button>` : ''}
       </div>
       <div class="plan-view">
-        ${hasPlan ? `<div class="svg-wrap" id="${planId}-fp">${d.svg_floor_plan}</div>` : ''}
-        ${hasAdj ? `<div class="svg-wrap" id="${planId}-adj" ${hasPlan ? 'hidden' : ''}>${d.adjacency_svg}</div>` : ''}
+        ${hasPlan ? `<div class="svg-wrap" id="${planId}-fp">${fp}</div>` : ''}
+        ${hasAdj ? `<div class="svg-wrap" id="${planId}-adj" ${hasPlan ? 'hidden' : ''}>${adj}</div>` : ''}
       </div>` : '<div class="plan-view"><div class="svg-wrap empty">No layout generated</div></div>'}
     <div class="chips">${chips}</div>
   </article>`;
@@ -275,9 +283,11 @@ form.addEventListener('submit', async (ev) => {
   const payload = {
     project_name: $('project_name').value || undefined,
     requirements: req,
-    max_alternatives: Number($('max_alternatives').value) || 5,
     use_got: $('use_got').checked,
   };
+  // Only cap the candidate pool if a number is given; blank = complexity-adaptive.
+  const maxc = $('max_alternatives').value.trim();
+  if (maxc) payload.max_alternatives = Number(maxc);
 
   const btn = $('run-btn');
   btn.disabled = true;
