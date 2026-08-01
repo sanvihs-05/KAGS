@@ -44,6 +44,32 @@ function setStatus(msg, kind) {
 }
 function hideStatus() { statusEl.hidden = true; }
 
+/* ── example briefs (low- vs high-complexity, real tested scenarios) ── */
+const EXAMPLES = {
+  simple: {
+    name: 'Simple 2-Bedroom Apartment',
+    brief: 'A small 2-bedroom apartment with one bathroom, a kitchen, and a living room. Around 70 sqm.',
+  },
+  complex: {
+    name: '4-Bedroom Family Home',
+    brief: 'Design a 4-bedroom family home of 220–260 sqm. The master bedroom should be 18 sqm '
+      + 'with an ensuite bathroom, and three further bedrooms of 12–14 sqm each sharing a common '
+      + 'bathroom. Provide an open-plan kitchen and living room of about 40 sqm, with the kitchen '
+      + 'connected to a separate dining area of 12 sqm. Include a quiet home office of 10 sqm, a '
+      + 'sauna, a laundry, and a mudroom that connects to a garage. Prioritise natural light '
+      + 'throughout and good acoustic separation between the bedrooms and living spaces.',
+  },
+};
+document.querySelectorAll('.ex-chip').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const ex = EXAMPLES[btn.dataset.ex];
+    if (!ex) return;
+    $('requirements').value = ex.brief;
+    $('project_name').value = ex.name;
+    $('requirements').focus();
+  });
+});
+
 /* ── theme ───────────────────────────────────────────────── */
 (function initTheme() {
   const saved = localStorage.getItem('kags-theme');
