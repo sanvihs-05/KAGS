@@ -1,3 +1,12 @@
+# OpenMP guard — MUST run before torch/faiss are imported (transitively, via
+# VectorStoreManager below). torch and faiss each bundle their own OpenMP
+# runtime; on Windows loading both aborts/hangs the process unless duplicates
+# are allowed and threading is pinned. Without this, `uvicorn backend.main:app`
+# never finishes startup (the port never binds → ERR_CONNECTION_REFUSED).
+import os
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
