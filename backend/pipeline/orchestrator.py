@@ -223,6 +223,11 @@ class PipelineOrchestrator:
             # =================================================================
             # PHASE 2: GENERATE DESIGN SPACE (ADAPTIVE)
             # =================================================================
+            # Real GoT trace for the UI: populated during exploration with the
+            # actual candidates scored, what the 0.70×max prune kept vs. dropped,
+            # and which high-scorers were merged into the aggregated hybrid. Every
+            # value here is measured, not illustrative.
+            got_trace = None
             if use_got:
                 logger.info("🕸️  Step 3: Generating thought graph (adaptive)...")
                 
@@ -411,6 +416,39 @@ class PipelineOrchestrator:
                 else:
                     alternatives = valid if valid else alternatives
 
+                # ── Capture the real prune trace for the UI ──────────────────
+                if scored_alternatives:
+                    kept_ids = {a.node_id for a in alternatives}
+                    got_trace = {
+                        'enabled': True,
+                        'candidates': [
+                            {
+                                'id': alt.node_id[:8],
+                                'variant_type': alt.metadata.get('variant_type', 'N/A'),
+                                'depth': int(getattr(alt, 'generation_level', 0)),
+                                'score': round(score, 4),
+                                'kept': alt.node_id in kept_ids,
+                            }
+                            for alt, score in scored_alternatives
+                        ],
+                        'prune': {
+                            'top_score': round(top_score, 4),
+                            'threshold': round(prune_threshold, 4),
+                            'ratio': 0.70,
+                            'n_scored': len(scored_alternatives),
+                            'n_pruned': int(n_pruned),
+                            'n_kept': len(alternatives),
+                        },
+                        'aggregation': {
+                            'performed': False,
+                            'threshold': None,
+                            'sources': [],
+                            'result': None,
+                            'skipped_reason': None,
+                        },
+                        'graph_statistics': stats,
+                    }
+
                 # ✅ SCORE-BASED AGGREGATION: Aggregate high-scoring alternatives together
                 try:
                     if len(alternatives) > 1:
@@ -431,6 +469,10 @@ class PipelineOrchestrator:
                         # Aggregating identical designs produces the same design
                         # back — require at least two DISTINCT ones to merge.
                         if len(dedupe_by_signature(high_scoring)) < 2:
+                            if got_trace is not None:
+                                got_trace['aggregation']['skipped_reason'] = (
+                                    'high-scoring candidates are the same design'
+                                )
                             logger.info(
                                 "   → Aggregation skipped: high-scoring candidates "
                                 "are the same design"
@@ -480,6 +522,24 @@ class PipelineOrchestrator:
                                 )
                             )
                             alternatives.insert(0, aggregated)
+                            if got_trace is not None:
+                                got_trace['aggregation'] = {
+                                    'performed': True,
+                                    'threshold': round(high_score_threshold, 4),
+                                    'sources': [
+                                        {
+                                            'id': n.node_id[:8],
+                                            'variant_type': n.metadata.get('variant_type', 'N/A'),
+                                            'score': round(float(n.composite_score or 0.0), 4),
+                                        }
+                                        for n in high_scoring
+                                    ],
+                                    'result': {
+                                        'id': aggregated.node_id[:8],
+                                        'score': round(float(aggregated.composite_score or 0.0), 4),
+                                    },
+                                    'skipped_reason': None,
+                                }
                             score_list = [f"{n.composite_score:.3f}" for n in high_scoring]
                             logger.info(
                                 f"   ✓ Aggregated {len(high_scoring)} high-scoring alternatives "
@@ -487,6 +547,11 @@ class PipelineOrchestrator:
                                 f"aggregated score: {aggregated.composite_score:.3f}"
                             )
                         else:
+                            if got_trace is not None:
+                                got_trace['aggregation']['skipped_reason'] = (
+                                    f'only {len(high_scoring)} candidate above '
+                                    f'0.75×max — need ≥2 to merge'
+                                )
                             logger.debug(
                                 f"   → Not enough high-scoring nodes for aggregation ({len(high_scoring)} < 2)"
                             )
@@ -668,6 +733,8 @@ class PipelineOrchestrator:
             # Add GoT-specific stats
             if use_got:
                 result['graph_statistics'] = stats
+                if got_trace is not None:
+                    result['got_graph'] = got_trace
                 result['best_paths'] = [
                     {
                         'length': len(path.nodes),

@@ -152,39 +152,42 @@ class SVGFloorPlanGenerator:
         """Add CSS styles to SVG"""
         style = ET.SubElement(svg, 'style')
         style.text = """
-            .room { 
-                stroke: #333; 
-                stroke-width: 2; 
+            .room {
+                stroke: #333;
+                stroke-width: 2;
                 fill-opacity: 0.9;
+                vector-effect: non-scaling-stroke;
             }
-            .room:hover { 
-                fill-opacity: 1.0; 
+            .room:hover {
+                fill-opacity: 1.0;
                 stroke-width: 3;
             }
-            .room-label { 
-                font-family: Arial, sans-serif; 
-                font-size: 14px; 
-                text-anchor: middle; 
+            /* font-size is set per-element (counter-scaled) because these labels
+               live inside the scaled room group; see _draw_rooms. */
+            .room-label {
+                font-family: Arial, sans-serif;
+                text-anchor: middle;
                 fill: #333;
                 font-weight: bold;
             }
-            .room-area { 
-                font-family: Arial, sans-serif; 
-                font-size: 11px; 
-                text-anchor: middle; 
+            .room-area {
+                font-family: Arial, sans-serif;
+                text-anchor: middle;
                 fill: #666;
             }
-            .circulation { 
-                stroke: #4A90E2; 
-                stroke-width: 3; 
-                stroke-dasharray: 8,4; 
+            .circulation {
+                stroke: #4A90E2;
+                stroke-width: 3;
+                stroke-dasharray: 8,4;
                 fill: none;
                 opacity: 0.6;
+                vector-effect: non-scaling-stroke;
             }
-            .dimension-line { 
-                stroke: #999; 
-                stroke-width: 1; 
+            .dimension-line {
+                stroke: #999;
+                stroke-width: 1;
                 fill: none;
+                vector-effect: non-scaling-stroke;
             }
             .dimension-text { 
                 font-family: Arial, sans-serif; 
@@ -254,11 +257,16 @@ class SVGFloorPlanGenerator:
         scale_x = available_width / max(layout_width, 1)
         scale_y = available_height / max(layout_height, 1)
         scale = min(scale_x, scale_y, self.scale)
-        
+
+        # Remember the applied scale: room geometry lives inside a group scaled
+        # by this factor, so label font sizes must be divided by it to render at
+        # the intended pixel size instead of scale× too large.
+        self._scale = scale
+
         # Calculate translation
         translate_x = self.margin - bounds['min_x'] * scale
         translate_y = self.margin + 50 - bounds['min_y'] * scale
-        
+
         return f'translate({translate_x}, {translate_y}) scale({scale}, {scale})'
     
     def _draw_rooms(
@@ -290,20 +298,28 @@ class SVGFloorPlanGenerator:
             })
             poly.set('data-room-id', room_id)
             
+            # Counter-scale the label sizes: this text lives inside a group
+            # scaled by self._scale, so a raw 14px would render 14×scale too big.
+            s = getattr(self, '_scale', self.scale) or 1.0
+            label_fs = 14.0 / s
+            area_fs = 11.0 / s
+
             # Add label
             centroid = polygon.centroid
             label = ET.SubElement(group, 'text', {
                 'x': str(centroid.x),
                 'y': str(centroid.y - 0.5),
-                'class': 'room-label'
+                'class': 'room-label',
+                'font-size': f'{label_fs:.4f}'
             })
             label.text = room_name
-            
+
             # Add area
             area_text = ET.SubElement(group, 'text', {
                 'x': str(centroid.x),
                 'y': str(centroid.y + 0.5),
-                'class': 'room-area'
+                'class': 'room-area',
+                'font-size': f'{area_fs:.4f}'
             })
             area_text.text = f'{polygon.area:.1f} m²'
     
@@ -336,11 +352,13 @@ class SVGFloorPlanGenerator:
                 'class': 'room'
             })
             
-            # Add label
+            # Add label (counter-scaled; see _draw_rooms)
+            s = getattr(self, '_scale', self.scale) or 1.0
             label = ET.SubElement(group, 'text', {
                 'x': str(x_offset + width/2),
                 'y': str(y_offset + length/2),
-                'class': 'room-label'
+                'class': 'room-label',
+                'font-size': f'{14.0 / s:.4f}'
             })
             label.text = room.name
             
