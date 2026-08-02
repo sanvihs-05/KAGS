@@ -610,17 +610,63 @@ Extract all spatial information and return as JSON."""
         
         return validated
     
+    # --- Comfort behaviour instantiation ------------------------------------
+    # Cue words that express a comfort intent anywhere in the brief. Previously
+    # comfort behaviours were only created when a *per-room* requirement string
+    # happened to contain 'light' or 'ventilation', so a building-wide
+    # instruction ("prioritise natural light throughout", "good acoustic
+    # separation between bedrooms and living spaces") reached no room and
+    # created nothing — leaving the thermal, acoustic, daylight and ventilation
+    # models with nothing to evaluate. Thermal and acoustic had no creation path
+    # at all.
+    _COMFORT_CUES = {
+        'lighting': ('natural light', 'daylight', 'daylit', 'sunlight', 'well-lit',
+                     'bright', 'glazing', 'large windows'),
+        'ventilation': ('ventilation', 'ventilated', 'cross-ventilation', 'airflow',
+                        'fresh air', 'air quality', 'passive cooling'),
+        'thermal': ('thermal', 'insulation', 'insulated', 'energy-efficient',
+                    'energy efficient', 'passive design', 'passive house',
+                    'heat retention', 'warm'),
+        'acoustic': ('acoustic', 'acoustically', 'sound insulation', 'soundproof',
+                     'noise', 'quiet'),
+    }
+
+    # Which room types each comfort behaviour is meaningful for. A garage does
+    # not need a daylight target; a closet does not need an acoustic one.
+    _HABITABLE = {'bedroom', 'living_room', 'kitchen', 'dining', 'dining_room',
+                  'office', 'study', 'family_room', 'media_room', 'lounge'}
+    _WET_ROOMS = {'bathroom', 'toilet', 'wc', 'sauna', 'laundry', 'utility'}
+    _COMFORT_APPLIES = {
+        'lighting': _HABITABLE,
+        'ventilation': _HABITABLE | _WET_ROOMS,
+        'thermal': _HABITABLE,                              # envelope-facing rooms
+        'acoustic': {'bedroom', 'office', 'study', 'living_room',
+                     'media_room', 'family_room'},          # quiet zones + noise sources
+    }
+
+    @classmethod
+    def _comfort_intents(cls, *texts: str) -> set:
+        """Comfort intents expressed anywhere in the given text(s)."""
+        blob = ' '.join(t for t in texts if t).lower()
+        return {intent for intent, cues in cls._COMFORT_CUES.items()
+                if any(cue in blob for cue in cues)}
+
     def _create_node_from_spatial_program(self, program: Dict, original_query: str) -> FBSLLayoutNode:
         """
         Create FBSL node from extracted spatial program
-        
+
         ✅ This replaces the direct call to Finnish mapper
         """
-        
+
         node = FBSLLayoutNode(node_type=NodeType.PROBLEM, generation_level=0)
         layout = Layout()
         layout.configuration_name = "LLM Extracted Layout"
-        
+
+        # Comfort intents stated for the building as a whole.
+        brief_intents = self._comfort_intents(original_query)
+        if brief_intents:
+            logger.info(f"  ✓ Brief comfort intents: {', '.join(sorted(brief_intents))}")
+
         # Create Functions, Behaviors, Structures, and Rooms from program
         for i, room_data in enumerate(program['rooms']):
             room_type = room_data['type']
@@ -669,31 +715,36 @@ Extract all spatial information and return as JSON."""
             )
             node.add_behavior(area_behavior)
             
-            # Add requirement-specific behaviors
-            for req in requirements:
-                req_lower = req.lower()
-                if 'ventilation' in req_lower or 'cross-ventilation' in req_lower:
-                    node.add_behavior(Behavior(
-                        category=BehaviorCategory.VENTILATION,
-                        metric_name=f"{room_type}_ventilation",
-                        metric_unit="ACH",
-                        target_value=0.5,
-                        actual_value=0.4,
-                        tolerance=0.3,
-                        derived_from_function=function.function_id
-                    ))
-                
-                if 'light' in req_lower or 'daylight' in req_lower:
-                    node.add_behavior(Behavior(
-                        category=BehaviorCategory.LIGHTING,
-                        metric_name=f"{room_type}_daylight",
-                        metric_unit="%",
-                        target_value=2.0,
-                        actual_value=1.8,
-                        tolerance=0.3,
-                        derived_from_function=function.function_id
-                    ))
-            
+            # Comfort behaviours: created when the intent is stated for the whole
+            # building OR in this room's own requirements, and the behaviour is
+            # meaningful for this room type. Targets are set to each calculator's
+            # own reference value so that `actual_value` comes back as the physical
+            # quantity itself (DF %, ACH, R-value, STC) rather than an arbitrary
+            # rescaling of it.
+            room_intents = brief_intents | self._comfort_intents(*requirements)
+            comfort_specs = {
+                'lighting':    (BehaviorCategory.LIGHTING,    'daylight',    '%',       3.0),
+                'ventilation': (BehaviorCategory.VENTILATION, 'ventilation', 'ACH',     4.0),
+                'thermal':     (BehaviorCategory.THERMAL,     'thermal',     'm²K/W',   5.0),
+                'acoustic':    (BehaviorCategory.ACOUSTIC,    'acoustic',    'STC',    45.0),
+            }
+            for intent in sorted(room_intents):
+                if room_type not in self._COMFORT_APPLIES.get(intent, set()):
+                    continue
+                category, suffix, unit, target = comfort_specs[intent]
+                node.add_behavior(Behavior(
+                    category=category,
+                    metric_name=f"{room_type}_{suffix}",
+                    metric_unit=unit,
+                    target_value=target,
+                    # Initial estimate only; replaced by the real S→Bs calculation
+                    # once structures and geometry exist.
+                    actual_value=target * 0.9,
+                    tolerance=0.3,
+                    derived_from_function=function.function_id
+                ))
+
+
             # Create Structure (partition + windows for habitable rooms)
             structure = Structure(
                 name=f"{room_type}_partition",
@@ -757,6 +808,36 @@ Extract all spatial information and return as JSON."""
             load_bearing=True
         )
         node.add_structure(foundation)
+
+        # ✅ Opaque envelope. Without these the only 'envelope' structures the
+        # thermal model could find were the windows and the foundation slab, so
+        # it averaged glazing against bare concrete and returned R ≈ 0.4 against
+        # a target of 5.0 for EVERY design — a constant penalty describing a gap
+        # in the model, not a property of the design. A building has exterior
+        # walls and a roof; the FBSL Structure layer has to carry them for S→Bs
+        # thermal analysis to mean anything, and for the material/insulation
+        # changes made by the variant strategies and the refinement loop to
+        # register at all. Areas are estimated from the floor plate (a compact
+        # rectangular footprint) so the calculator's area-weighted average
+        # weights them correctly against the openings.
+        _floor_area = sum(r.area for r in layout.rooms.values()) or 1.0
+        _perimeter = 4.0 * (_floor_area ** 0.5)
+        node.add_structure(Structure(
+            name="exterior_wall",
+            structure_type=StructureType.WALL,
+            material_type="insulated_timber_frame",
+            category="envelope",
+            dimensions={'thickness': 0.30, 'area': round(_perimeter * 3.0, 2)},
+            load_bearing=True
+        ))
+        node.add_structure(Structure(
+            name="roof",
+            structure_type=StructureType.ROOF,
+            material_type="insulated_roof",
+            category="envelope",
+            dimensions={'thickness': 0.40, 'area': round(_floor_area, 2)},
+            load_bearing=True
+        ))
 
         # Calculate layout metrics
         layout.total_area = sum(r.area for r in layout.rooms.values())

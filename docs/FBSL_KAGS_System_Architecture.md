@@ -17,12 +17,30 @@ explicit fourth layer, **Layout (L)**.
 - **Function (F)** — *what the building must do*. One function per required room
   (`provide_bedroom`, `provide_kitchen`…), each with a priority ∈ [0.5, 0.95],
   a set of activities, and spatial requirements (min / preferred / max area).
-- **Behavior (B)** — *how it must perform*. Expected behaviors (Bₑ) are targets
-  (thermal 21 °C, daylight factor 3 %, acoustic STC 45, ventilation, area);
+- **Behavior (B)** — *how it must perform*. Expected behaviors (Bₑ) are targets;
   actual behaviors (Bₛ) are what the current design achieves, computed from
-  physics.
-- **Structure (S)** — *what it is built from*. Walls, partitions, glazing,
-  foundation, MEP — each with a material, dimensions, and a load-bearing flag.
+  physics. Every room gets an **area** target. The four **comfort** targets —
+  daylight 3 %, ventilation 4 ACH, thermal R 5.0 m²K/W, acoustic STC 45 — are
+  created when the brief asks for them, matching cue words **anywhere in the
+  brief** as well as in a room's own requirements, and only for room types where
+  they are meaningful (a garage gets no daylight target, a closet no acoustic
+  one). Each target equals its calculator's own reference value, so the
+  reported `actual_value` *is* the physical quantity (DF %, ACH, R, STC).
+  **Why brief-wide:** matching only per-room requirement strings meant a
+  building-wide instruction such as "prioritise natural light throughout and
+  good acoustic separation" reached no room and created nothing, so the physics
+  models had nothing to evaluate — thermal and acoustic were never instantiated
+  at all, and their calculators never executed.
+- **Structure (S)** — *what it is built from*. Exterior walls and roof (the
+  opaque envelope), interior partitions, glazing, foundation, MEP — each with a
+  material, dimensions, and a load-bearing flag. **Why the envelope is explicit:**
+  without it the only structures the thermal model could see were the windows
+  and the foundation slab, so it averaged glazing against bare concrete and
+  returned R ≈ 0.4 against a target of 5.0 for every design — a constant penalty
+  describing a gap in the model rather than a property of the design. Envelope
+  materials carry whole-**assembly** U-values (insulated timber frame 0.18,
+  insulated roof 0.15 W/m²K); the bare-material table entries (concrete 2.0,
+  brick 1.7) describe *uninsulated* elements and must not be read as build-ups.
 - **Layout (L)** — *where everything is*. Room coordinates, dimensions, the
   adjacency graph, and circulation. This is the extension: classical FBS stops
   at S, but a floor plan is meaningless without concrete geometry, so L is a

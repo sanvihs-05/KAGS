@@ -607,6 +607,14 @@ class BehaviorCalculator:
             'gypsum_board': {'u_value': 0.8, 'stc': 35.0, 'density': 800.0},
             'insulation': {'u_value': 0.04, 'stc': 20.0, 'density': 30.0},
             'waterproof_membrane': {'u_value': 0.5, 'stc': 15.0, 'density': 1200.0},
+            # Whole-ASSEMBLY U-values (W/m²K) for the opaque envelope, as built
+            # up in practice. Everything above is a bare material: a "concrete"
+            # wall at 2.0 is an *uninsulated* slab, which is why an envelope
+            # described only by bare materials scores as though it had no
+            # insulation at all. These are typical modern insulated build-ups.
+            'insulated_timber_frame': {'u_value': 0.18, 'stc': 45.0, 'density': 400.0},
+            'insulated_masonry': {'u_value': 0.22, 'stc': 55.0, 'density': 1400.0},
+            'insulated_roof': {'u_value': 0.15, 'stc': 40.0, 'density': 300.0},
         }
     
     def _initialize_structural_rules(self) -> Dict[str, Any]:
