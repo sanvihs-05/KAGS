@@ -1113,28 +1113,43 @@ Extract all spatial information and return as JSON."""
     @staticmethod
     def _fit_rooms_to_total(node: FBSLLayoutNode, band: tuple) -> None:
         """Scale the room program so its total lands inside the stated band.
-        Targets the band MINIMUM (least inflation that satisfies the brief),
-        scaling each room proportionally but clamped to its function's
-        [min_area, max_area]. If the program cannot reach the band even at max
-        areas, rooms go to max and the shortfall is left (reported honestly)."""
+
+        Under-shoot targets the band MINIMUM (least inflation that satisfies the
+        brief); over-shoot targets the band MAXIMUM (least deflation). Both
+        directions matter: RAG area reconciliation blends in precedent areas and
+        can push the program either side of the user's stated total, and a
+        program left above the band fails the BriefValidator's area gate — which
+        forces every candidate to score 0.0 and makes the whole ranking
+        degenerate. Each room scales proportionally, clamped to its function's
+        [min_area, max_area], so a program that cannot reach the band is left
+        with an honest shortfall rather than a violated per-room constraint."""
         if not node.layout or not node.layout.rooms:
             return
         rooms = list(node.layout.rooms.values())
         net = sum(r.area for r in rooms)
         lo, hi = band
-        if net >= lo:
-            return  # already within/above the stated minimum
-        target = lo
-        # per-room max from the linked function's spatial_requirements
-        def _max_for(r):
+        if lo <= net <= hi:
+            return  # already inside the stated band
+
+        # per-room [min, max] from the linked function's spatial_requirements
+        def _bounds_for(r):
             f = node.functions.get(getattr(r, 'function_id', None))
             sr = getattr(f, 'spatial_requirements', None) if f else None
-            if sr and isinstance(sr, dict) and sr.get('max_area'):
-                return float(sr['max_area'])
-            return r.area * 1.4  # fallback cap
+            lo_a = hi_a = None
+            if sr and isinstance(sr, dict):
+                if sr.get('min_area'):
+                    lo_a = float(sr['min_area'])
+                if sr.get('max_area'):
+                    hi_a = float(sr['max_area'])
+            # fallbacks keep a room within a sane factor of its current size
+            return (lo_a if lo_a is not None else r.area * 0.6,
+                    hi_a if hi_a is not None else r.area * 1.4)
+
+        target = lo if net < lo else hi
         scale = target / max(net, 1e-9)
         for r in rooms:
-            r.area = round(min(r.area * scale, _max_for(r)), 2)
+            min_a, max_a = _bounds_for(r)
+            r.area = round(min(max(r.area * scale, min_a), max_a), 2)
             if hasattr(r, 'calculate_volume'):
                 r.calculate_volume()
         node.layout.total_area = sum(r.area for r in rooms)
@@ -1145,7 +1160,8 @@ Extract all spatial information and return as JSON."""
                 match = [r for r in rooms if r.function_id == b.derived_from_function]
                 if match:
                     b.target_value = round(sum(m.area for m in match) / len(match), 2)
-        logger.info(f"  ✓ Fit room program to stated total: {net:.0f} → "
+        direction = 'up' if target == lo else 'down'
+        logger.info(f"  ✓ Fit room program {direction} to stated total: {net:.0f} → "
                     f"{node.layout.total_area:.0f} m² (band {lo:.0f}-{hi:.0f})")
 
     def _add_constraints(self, node: FBSLLayoutNode, context: Dict[str, Any]):
