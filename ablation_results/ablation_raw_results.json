@@ -11,8 +11,9 @@
         "structural": 0.94,
         "layout": 0.9413,
         "sustainability": 0.4448,
+        "top_variant": "aggregated_hybrid",
         "n_prototypes": 5,
-        "time_s": 38.71,
+        "time_s": 18.95,
         "drop_pct": 0.0
       },
       {
@@ -23,8 +24,9 @@
         "structural": 0.94,
         "layout": 0.9894,
         "sustainability": 0.5281,
+        "top_variant": "central_circulation",
         "n_prototypes": 4,
-        "time_s": 40.25,
+        "time_s": 15.15,
         "drop_pct": -0.15
       },
       {
@@ -35,8 +37,9 @@
         "structural": 0.94,
         "layout": 0.9413,
         "sustainability": 0.4448,
+        "top_variant": "aggregated_hybrid",
         "n_prototypes": 5,
-        "time_s": 31.35,
+        "time_s": 16.55,
         "drop_pct": -0.12
       },
       {
@@ -47,8 +50,9 @@
         "structural": 0.94,
         "layout": 0.943,
         "sustainability": 0.4865,
+        "top_variant": "aggregated_hybrid",
         "n_prototypes": 5,
-        "time_s": 2.36,
+        "time_s": 3.87,
         "drop_pct": -0.53
       },
       {
@@ -59,8 +63,9 @@
         "structural": 0.94,
         "layout": 0.9762,
         "sustainability": 0.5054,
+        "top_variant": "performance_optimized",
         "n_prototypes": 5,
-        "time_s": 49.84,
+        "time_s": 21.15,
         "drop_pct": 0.5
       },
       {
@@ -71,8 +76,9 @@
         "structural": 0.94,
         "layout": 0.9762,
         "sustainability": 0.5054,
+        "top_variant": "performance_optimized",
         "n_prototypes": 5,
-        "time_s": 63.37,
+        "time_s": 23.37,
         "drop_pct": 5.17
       },
       {
@@ -83,8 +89,9 @@
         "structural": 0.94,
         "layout": 0.8207,
         "sustainability": 0.346,
+        "top_variant": "aggregated_hybrid",
         "n_prototypes": 5,
-        "time_s": 53.76,
+        "time_s": 16.74,
         "drop_pct": 4.62
       }
     ]
@@ -101,8 +108,9 @@
         "structural": 0.94,
         "layout": 0.9784,
         "sustainability": 0.5206,
+        "top_variant": "functional_priority+compact_layout",
         "n_prototypes": 8,
-        "time_s": 89.85,
+        "time_s": 30.75,
         "drop_pct": 0.0
       },
       {
@@ -113,8 +121,9 @@
         "structural": 0.94,
         "layout": 0.986,
         "sustainability": 0.5325,
+        "top_variant": "central_circulation",
         "n_prototypes": 6,
-        "time_s": 64.19,
+        "time_s": 23.54,
         "drop_pct": 2.22
       },
       {
@@ -125,8 +134,9 @@
         "structural": 0.94,
         "layout": 0.9806,
         "sustainability": 0.5206,
+        "top_variant": "functional_priority+compact_layout",
         "n_prototypes": 8,
-        "time_s": 78.13,
+        "time_s": 29.89,
         "drop_pct": -1.59
       },
       {
@@ -137,8 +147,9 @@
         "structural": 0.94,
         "layout": 0.9404,
         "sustainability": 0.5446,
+        "top_variant": "functional_priority+natural_ventilation",
         "n_prototypes": 8,
-        "time_s": 10.44,
+        "time_s": 9.2,
         "drop_pct": 0.82
       },
       {
@@ -149,8 +160,9 @@
         "structural": 0.915,
         "layout": 0.9278,
         "sustainability": 0.5029,
+        "top_variant": "functional_priority+natural_ventilation",
         "n_prototypes": 8,
-        "time_s": 76.3,
+        "time_s": 28.0,
         "drop_pct": 2.24
       },
       {
@@ -161,8 +173,9 @@
         "structural": 0.94,
         "layout": 0.9784,
         "sustainability": 0.5206,
+        "top_variant": "functional_priority+compact_layout",
         "n_prototypes": 8,
-        "time_s": 73.29,
+        "time_s": 24.46,
         "drop_pct": 4.56
       },
       {
@@ -173,8 +186,9 @@
         "structural": 0.915,
         "layout": 0.778,
         "sustainability": 0.3869,
+        "top_variant": "functional_priority+natural_ventilation",
         "n_prototypes": 8,
-        "time_s": 64.91,
+        "time_s": 22.55,
         "drop_pct": 7.87
       }
     ]
@@ -191,8 +205,9 @@
         "structural": 0.94,
         "layout": 0.9703,
         "sustainability": 0.5254,
+        "top_variant": "functional_priority+compact_layout",
         "n_prototypes": 8,
-        "time_s": 94.68,
+        "time_s": 28.94,
         "drop_pct": 0.0
       },
       {
@@ -203,8 +218,9 @@
         "structural": 0.94,
         "layout": 0.9812,
         "sustainability": 0.5373,
+        "top_variant": "central_circulation",
         "n_prototypes": 6,
-        "time_s": 64.06,
+        "time_s": 22.4,
         "drop_pct": 1.21
       },
       {
@@ -215,8 +231,9 @@
         "structural": 0.94,
         "layout": 0.9628,
         "sustainability": 0.5254,
+        "top_variant": "functional_priority+compact_layout",
         "n_prototypes": 8,
-        "time_s": 83.2,
+        "time_s": 28.3,
         "drop_pct": -1.37
       },
       {
@@ -227,8 +244,9 @@
         "structural": 0.94,
         "layout": 0.9349,
         "sustainability": 0.4956,
+        "top_variant": "functional_priority+priority_focus",
         "n_prototypes": 8,
-        "time_s": 9.54,
+        "time_s": 8.0,
         "drop_pct": 0.46
       },
       {
@@ -239,8 +257,9 @@
         "structural": 0.94,
         "layout": 0.9636,
         "sustainability": 0.5673,
+        "top_variant": "performance_optimized+natural_ventilation",
         "n_prototypes": 8,
-        "time_s": 74.8,
+        "time_s": 28.82,
         "drop_pct": 1.37
       },
       {
@@ -251,8 +270,9 @@
         "structural": 0.94,
         "layout": 0.9703,
         "sustainability": 0.5254,
+        "top_variant": "functional_priority+compact_layout",
         "n_prototypes": 8,
-        "time_s": 101.3,
+        "time_s": 28.93,
         "drop_pct": 4.44
       },
       {
@@ -263,8 +283,9 @@
         "structural": 0.9257,
         "layout": 0.6544,
         "sustainability": 0.3184,
+        "top_variant": "functional_priority+priority_focus",
         "n_prototypes": 8,
-        "time_s": 78.09,
+        "time_s": 26.24,
         "drop_pct": 10.98
       }
     ]
