@@ -339,17 +339,55 @@ class RefinementAgent:
         return node
     
     # Helper methods to add structures
+    # One step up the envelope ladder. "Adding insulation" to a building means
+    # upgrading the wall/roof build-up, not hanging an extra element off it.
+    _ENVELOPE_UPGRADE = {
+        'lightweight_frame': 'insulated_timber_frame',
+        'insulated_timber_frame': 'high_performance_envelope',
+        'insulated_masonry': 'high_performance_envelope',
+        'lightweight_roof': 'insulated_roof',
+        'insulated_roof': 'high_performance_roof',
+    }
+
     def _add_thermal_structure(self, node: FBSLLayoutNode):
-        """Add thermal insulation structure"""
+        """Improve the envelope when a thermal behaviour is unsatisfied.
+
+        This used to append a free-floating `thermal_insulation` structure with
+        no `area` in its dimensions. The thermal model is an area-weighted U→R
+        average and falls back to area 1.0, so that element carried a weight of
+        1 against an exterior wall of ~190 m² and a roof of ~250 m² — it shifted
+        the composite R by well under a percent. The refinement loop believed it
+        had addressed the deviation while the score barely moved, so the same
+        deviation came back on the next iteration.
+
+        Upgrading the existing build-up one step is both what the reformulation
+        means physically and what the calculator can actually see.
+        """
         from ..core.fbsl_models import Structure, StructureType
-        
-        insulation = Structure(
+
+        upgraded = False
+        for s in node.structures.values():
+            nxt = self._ENVELOPE_UPGRADE.get((s.material_type or '').lower())
+            if nxt and (s.name or '').lower() in ('exterior_wall', 'roof'):
+                s.material_type = nxt
+                upgraded = True
+
+        if upgraded:
+            return
+
+        # No envelope to upgrade (older nodes): fall back to an insulation layer,
+        # but give it an area so it is weighted rather than ignored.
+        floor_area = 0.0
+        if node.layout and node.layout.rooms:
+            floor_area = sum(float(r.area or 0) for r in node.layout.rooms.values())
+        node.add_structure(Structure(
             name="thermal_insulation",
             structure_type=StructureType.WALL,
             material_type="insulation",
-            dimensions={'thickness': 0.15}
-        )
-        node.add_structure(insulation)
+            category="envelope",
+            dimensions={'thickness': 0.15,
+                        'area': round(4.0 * (max(floor_area, 1.0) ** 0.5) * 3.0, 2)},
+        ))
     
     def _add_acoustic_structure(self, node: FBSLLayoutNode):
         """Add acoustic partition"""
