@@ -41,43 +41,63 @@ Three scenarios span the adaptive-complexity range:
 
 ---
 
+## Reproducibility
+
+This study has been executed twice, on separate days, with substantial pipeline changes in
+between (bidirectional area fitting to the stated total; a BRE daylight-factor model replacing
+glazing-over-floor-area; ventilation computed from opening geometry instead of a strategy label;
+a rendered-geometry axis added to diversity ranking).
+
+**Every composite and every sub-score reproduced byte-identically across all 21 cells.** Only the
+wall-clock timings moved. Two things explain that, and both are worth stating plainly:
+
+1. The pipeline is effectively **deterministic** for a fixed brief — the LLM runs at temperature
+   0.1, and FAISS retrieval, the treemap and the scoring maths are all deterministic.
+2. The physics changes **could not** have moved these numbers, because none of the three
+   scenarios instantiate any thermal, acoustic, daylight or ventilation behaviour (see Finding 4).
+
+Point 2 is the load-bearing one: the stability here is evidence of determinism, **not** evidence
+that the physics models are stable or correct. This study does not exercise them.
+
+---
+
 ## Results
 
 ### Simple 2-Bedroom Apartment (Low complexity)
 
 | Configuration | Composite | Δ vs baseline | Time (s) |
 |---|---|---|---|
-| **Full Framework (Baseline)** | **0.8673** | — | 38.71 |
-| Without GoT Exploration | 0.8686 | −0.15 % (no change) | 40.25 |
-| Without RAG (FAISS Retrieval) | 0.8683 | −0.12 % (no change) | 31.35 |
-| Without Refinement Agent | 0.8719 | −0.53 % (no change) | **2.36** |
-| Without Physics-Based Behavior Analysis | 0.8630 | +0.50 % | 49.84 |
-| Equal-Weight Scoring | 0.8225 | **+5.17 %** | 63.37 |
-| Naive Layout Placement | 0.8272 | **+4.62 %** | 53.76 |
+| **Full Framework (Baseline)** | **0.8673** | — | 18.95 |
+| Without GoT Exploration | 0.8686 | −0.15 % (no change) | 15.15 |
+| Without RAG (FAISS Retrieval) | 0.8683 | −0.12 % (no change) | 16.55 |
+| Without Refinement Agent | 0.8719 | −0.53 % (no change) | **3.87** |
+| Without Physics-Based Behavior Analysis | 0.8630 | +0.50 % | 21.15 |
+| Equal-Weight Scoring | 0.8225 | **+5.17 %** | 23.37 |
+| Naive Layout Placement | 0.8272 | **+4.62 %** | 16.74 |
 
 ### 3-Bedroom Townhouse (Medium complexity)
 
 | Configuration | Composite | Δ vs baseline | Time (s) |
 |---|---|---|---|
-| **Full Framework (Baseline)** | **0.8699** | — | 89.85 |
-| Without GoT Exploration | 0.8506 | +2.22 % | 64.19 |
-| Without RAG (FAISS Retrieval) | 0.8837 | −1.59 % (no change) | 78.13 |
-| Without Refinement Agent | 0.8628 | +0.82 % | **10.44** |
-| Without Physics-Based Behavior Analysis | 0.8504 | +2.24 % | 76.30 |
-| Equal-Weight Scoring | 0.8302 | **+4.56 %** | 73.29 |
-| Naive Layout Placement | 0.8014 | **+7.87 %** | 64.91 |
+| **Full Framework (Baseline)** | **0.8699** | — | 30.75 |
+| Without GoT Exploration | 0.8506 | +2.22 % | 23.54 |
+| Without RAG (FAISS Retrieval) | 0.8837 | −1.59 % (no change) | 29.89 |
+| Without Refinement Agent | 0.8628 | +0.82 % | **9.20** |
+| Without Physics-Based Behavior Analysis | 0.8504 | +2.24 % | 28.00 |
+| Equal-Weight Scoring | 0.8302 | **+4.56 %** | 24.46 |
+| Naive Layout Placement | 0.8014 | **+7.87 %** | 22.55 |
 
 ### 4-Bedroom Family Home (High complexity)
 
 | Configuration | Composite | Δ vs baseline | Time (s) |
 |---|---|---|---|
-| **Full Framework (Baseline)** | **0.8628** | — | 94.68 |
-| Without GoT Exploration | 0.8524 | +1.21 % | 64.06 |
-| Without RAG (FAISS Retrieval) | 0.8746 | −1.37 % (no change) | 83.20 |
-| Without Refinement Agent | 0.8588 | +0.46 % | **9.54** |
-| Without Physics-Based Behavior Analysis | 0.8510 | +1.37 % | 74.80 |
-| Equal-Weight Scoring | 0.8245 | **+4.44 %** | 101.30 |
-| Naive Layout Placement | 0.7681 | **+10.98 %** | 78.09 |
+| **Full Framework (Baseline)** | **0.8628** | — | 28.94 |
+| Without GoT Exploration | 0.8524 | +1.21 % | 22.40 |
+| Without RAG (FAISS Retrieval) | 0.8746 | −1.37 % (no change) | 28.30 |
+| Without Refinement Agent | 0.8588 | +0.46 % | **8.00** |
+| Without Physics-Based Behavior Analysis | 0.8510 | +1.37 % | 28.82 |
+| Equal-Weight Scoring | 0.8245 | **+4.44 %** | 28.93 |
+| Naive Layout Placement | 0.7681 | **+10.98 %** | 26.24 |
 
 *("Δ" is drop in composite when the feature is removed; "no change" marks a difference within
 run-to-run LLM-extraction noise, not a real effect either direction.)*
@@ -100,16 +120,36 @@ not an arbitrary choice: it produces higher-scoring designs by the framework's o
 
 **3. The refinement (convergence) loop is nearly free to skip, but expensive to run.**
 Removing it changes composite by well under 1 % in every scenario — but cuts wall-clock time by
-**10–16×** (38.71 s → 2.36 s; 94.68 s → 9.54 s). This corroborates the architecture doc's stated
+**3–5×** (18.95 s → 3.87 s; 28.94 s → 8.00 s). *(An earlier run of this same study measured
+10–16×. The composite scores reproduced exactly between the two runs; only the timings moved,
+because wall-clock is dominated by network latency to the hosted LLM and by machine load. Treat
+the ratio, not the absolute seconds, as the finding — and treat even the ratio as
+approximate.)* This corroborates the architecture doc's stated
 limitation: because the encoder + treemap already produce spec-meeting designs, most behaviors
 start satisfied, so the Gero reformulation loop iterates without finding anything to fix. The loop
 is not broken — it is doing real physics-based checking — but for typical briefs it is checking
 designs that already pass.
 
-**4. Physics-based behavior analysis (S→Bs) provides a small, consistent benefit.**
-Using static encoder estimates instead of real structure-derived physics costs 0.5–2.2 % composite
-— a real but modest effect, consistent with the refinement finding: most designs are close to
-spec either way, so the physics step's main value is precision rather than large corrections.
+**4. The S→Bs recomputation provides a small, consistent benefit — but on *area* behaviors, not
+envelope physics.** Using static encoder estimates instead of recomputing behaviors from the
+design costs 0.5–2.2 % composite: real but modest, consistent with the refinement finding.
+
+The label needs an important qualification, verified after this run. **None of the three
+scenarios instantiate a single thermal, acoustic, daylight or ventilation behavior** — inspecting
+the encoded node for the family-home brief shows only `*_area` behaviors. Two things cause this:
+
+- Comfort behaviors are created by scanning each room's **per-room requirement strings** for
+  `'light'` / `'ventilation'` ([encoder_agent.py:673-695](../backend/agents/encoder_agent.py#L673-L695)),
+  so a *building-wide* instruction — the family-home brief literally says "Prioritise natural light
+  throughout and good acoustic separation" — never reaches any room and creates nothing.
+- **Thermal and acoustic behaviors are never created anywhere on the live path.** The encoder has
+  no branch for them, and `FinnishFBSLMapper`, which would supply them, is constructed but never
+  called.
+
+So `_calculate_thermal_behavior` and `_calculate_acoustic_behavior` do not execute in this study,
+and the arm above measures recomputing **room-area** behaviors from the realised layout. That is a
+genuine and useful thing to measure — but it is not the envelope physics the architecture doc
+describes, and this study offers no evidence about that physics either way.
 
 **5. GoT exploration's value is complexity-dependent and modest at this alternative count.**
 Disabling GoT costs ~1.2–2.2 % on the medium/high scenarios and is within noise on the low one.
@@ -143,6 +183,16 @@ constant that happens to sit at 0.94.
 
 ## Honest limitations of this study
 
+- **The envelope physics is never exercised.** No thermal, acoustic, daylight or ventilation
+  behaviour is instantiated in any of the 21 cells (Finding 4), so this study says nothing about
+  those four models — including the two, thermal and acoustic, that no live code path can create
+  at all. A study that intended to measure them would first need briefs whose *per-room*
+  requirements trigger the comfort behaviours, or a fix to how building-wide comfort requirements
+  are propagated.
+- **Wall-clock times are not comparable across runs.** They are dominated by network latency to
+  the hosted LLM and by machine load; the same 21 cells produced 10–16× refinement speed-ups on
+  one day and 3–5× on another, with identical scores. Only the composites are stable enough to
+  reason about.
 - **Single LLM extraction per cell.** Each configuration ran the encoder once; a different
   Groq extraction of the same brief can itself shift room counts/areas slightly. This is the
   likely source of the GoT-off sign flip on the apartment scenario specifically (the RAG sign
