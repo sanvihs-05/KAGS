@@ -79,11 +79,16 @@ possible and functional always.
 **Stated total area.** The brief's explicit total ("Total area 210–250 sqm",
 "within 250 sqm") is parsed — guarded by whole-design cue words so a single
 room's area is never mistaken for the total — and stored as
-`target_total_area`. If the extracted room program sums below the stated
-minimum, the rooms are scaled up proportionally to reach it, each clamped to its
-function's `max_area`. **Why:** rooms extracted individually sum to the *net*
-usable area, which is typically 15–20 % below the *gross* figure a client
-states; without this the design silently under-delivers on the requested size.
+`target_total_area`. The room program is then scaled to land inside that band —
+up to the band minimum when it falls short, **down to the band maximum when it
+overshoots** — each room clamped to its function's `[min_area, max_area]`.
+**Why both directions:** rooms extracted individually sum to the *net* usable
+area, typically 15–20 % below the *gross* figure a client states, so without the
+up-scaling the design silently under-delivers. The down-scaling matters just as
+much: RAG area reconciliation blends in precedent areas and can push the program
+*above* the stated total, which fails the brief validator's area gate — and when
+that happens to every candidate, all of them score 0.0 and the ranking collapses
+entirely.
 
 **Output.** An FBSL problem node: one Function + area Behavior + partition and
 glazing Structures per room, node-level HVAC and foundation, an initial room
@@ -403,8 +408,23 @@ scorer's ratio is directly meaningful):
 - *Lighting* — Daylight Factor from window area × glazing transmittance vs floor
   area; `ratio = DF / 3`. **Why DF 3 %:** the accepted threshold for "well-lit"
   habitable rooms.
-- *Ventilation* — mechanical ACH from duct sizing, or natural stack-effect if no
-  MEP.
+- *Ventilation* — air changes per hour from the **actual opening geometry**, per
+  room and floor-area-weighted to the dwelling. Natural flow takes the greater of
+  the wind- and buoyancy-driven single-sided rates (BS 5925 / CIBSE AM10):
+  `Q_wind = 0.025·A_open·v` and `Q_stack = (C_d/3)·A_open·√(g·H·ΔT/T̄)`, with
+  `A_open = 0.45 × glazed area`; a mechanical system adds its design supply rate
+  (0.5 l/s·m²) at boost, and envelope leakage contributes a 0.15 ACH floor.
+  `ratio = ACH / 4` against the purge criterion. **Why purge (4 ACH) and not
+  background (~0.5):** rapid ventilation is the demanding case openable area is
+  actually sized for; against a background target every glazed design saturates
+  and the metric stops discriminating. Because a room's glazed area scales with
+  its floor area, the resulting ACH is governed by *glazing ratio and ceiling
+  height* — the parameters the GoT variants change — while windowless interior
+  rooms, served by plant alone, correctly pull the dwelling figure down.
+  **Superseded** a label lookup (HVAC → 1.0, windows → 0.75, else 0.40) that did
+  no physics: it could not separate two naturally ventilated designs with
+  different glazing, and gave any design carrying an HVAC object a perfect score
+  regardless of its capacity.
 
 **Reformulation types** (Gero), chosen by average deviation:
 
