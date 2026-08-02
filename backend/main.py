@@ -16,6 +16,7 @@ from typing import List, Optional
 import yaml
 
 from .database.vector_store import VectorStoreManager
+from .database.result_store import ResultStore
 
 # Load config
 import os
@@ -64,6 +65,7 @@ app = FastAPI(title="FBSL-KAGS API with Finnish Floor Plans", version="1.0.0")
 
 # Initialize services
 vector_store = VectorStoreManager()
+result_store = ResultStore()
 
 # CORS
 app.add_middleware(
@@ -237,7 +239,51 @@ async def run_pipeline(request: PipelineRequest):
     }
 
     result = await orchestrator.process_design_request(req)
+
+    # Persist the run so it can be listed, reloaded and deleted from the UI.
+    # A storage failure must never lose the result the caller is waiting on.
+    try:
+        run_id = result_store.save_run(result, brief=request.requirements or "")
+        if run_id:
+            result['run_id'] = run_id
+    except Exception as e:
+        logger.warning("Could not store run: %s", e)
+
     return result
+
+
+# ---------------------------------------------------------------- results API
+@app.get("/results")
+async def list_results(limit: int = 100):
+    """Stored runs, newest first. Summaries only — no image payloads."""
+    return {"runs": result_store.list_runs(limit=limit), "stats": result_store.stats()}
+
+
+@app.get("/results/{run_id}")
+async def get_result(run_id: str):
+    """One stored run, shaped like a live pipeline result (complete FBSL,
+    layout, connectivity graph and images for every prototype)."""
+    run = result_store.get_run(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+    return run
+
+
+@app.delete("/results/{run_id}")
+async def delete_result(run_id: str):
+    """Delete a run and every prototype belonging to it."""
+    if not result_store.delete_run(run_id):
+        raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+    return {"deleted": run_id}
+
+
+@app.delete("/results/{run_id}/prototypes/{prototype_id}")
+async def delete_prototype(run_id: str, prototype_id: str):
+    """Delete a single prototype, keeping the rest of the run."""
+    if not result_store.delete_prototype(prototype_id):
+        raise HTTPException(status_code=404, detail=f"Prototype {prototype_id} not found")
+    return {"deleted": prototype_id, "run_id": run_id}
+
 
 if __name__ == "__main__":
     import uvicorn
