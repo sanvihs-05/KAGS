@@ -433,36 +433,118 @@ class BehaviorCalculator:
         logger.debug(f"    Structural completeness: {completeness:.2f}")
         return behavior.target_value * completeness if behavior.target_value else completeness
     
+    # --- Ventilation constants (each an explicit, citable design assumption) ---
+    _VENT_CD = 0.61            # sharp-edged orifice discharge coefficient
+    _VENT_WIND_COEFF = 0.025   # BS 5925 single-sided single-opening empirical factor
+    _VENT_WIND_SPEED = 3.0     # m/s — typical sheltered low-rise mean wind speed
+    _VENT_OPENABLE_FRAC = 0.45 # openable share of a glazed area (casement/tilt-turn)
+    _VENT_OPENING_H = 1.2      # m — window opening height, drives the stack term
+    _VENT_DELTA_T = 3.0        # K indoor–outdoor difference, mild design condition
+    _VENT_T_MEAN = 293.0       # K
+    _VENT_MECH_RATE = 0.0005   # m³/s per m² floor (0.5 l/s·m², EU dwelling guidance)
+    _VENT_MECH_BOOST = 3.0     # purge/boost multiple typical of an MVHR unit
+    _VENT_PURGE_TARGET = 4.0   # ACH — rapid ("purge") ventilation criterion
+    _VENT_INFILTRATION = 0.15  # ACH — background envelope leakage; no real
+                               # envelope is airtight, so even a design with no
+                               # openings and no plant is never exactly zero
+
     def _calculate_ventilation_behavior(
-        self, 
+        self,
         behavior: Behavior,
-        structures: Dict[str, Structure], 
+        structures: Dict[str, Structure],
         node: FBSLLayoutNode
     ) -> float:
-        """Calculate ventilation performance"""
-        
+        """Air changes per hour computed from the actual opening geometry.
+
+        This used to be a label lookup (HVAC → 1.0, windows → 0.75, else 0.40),
+        which did no physics at all: it could not tell apart two naturally
+        ventilated designs with very different glazing, and handed any design
+        with an HVAC object a perfect score regardless of its capacity.
+
+        Natural flow uses the BS 5925 / CIBSE AM10 concept-stage single-sided
+        equations, taking the greater of the wind- and buoyancy-driven rates
+        (they are not additive):
+
+            Q_wind  = 0.025 · A_open · v
+            Q_stack = (Cd/3) · A_open · √(g · H · ΔT / T̄)
+
+        Mechanical systems contribute their design supply rate at boost. Note
+        that because a room's glazed area scales with its floor area, the
+        resulting ACH depends on the *glazing ratio and ceiling height* rather
+        than room size — so it responds to the design decisions the GoT variants
+        actually change. The building figure is the floor-area-weighted mean of
+        the per-room rates, so windowless interior rooms (served by mechanical
+        only) correctly drag it down. Scored against the purge criterion, which
+        is the demanding case openable area is sized for.
+
+        Concept-stage envelope flow only: no weather file, orientation, sun path
+        or wind-pressure-coefficient set. Comparative, not a compliance figure.
+        """
+        rooms = (node.layout.rooms if node.layout and node.layout.rooms else {}) or {}
+        if not rooms:
+            # No geometry to reason about — fall back to presence heuristics.
+            has_windows = any('window' in s.name.lower() for s in structures.values())
+            score = 0.75 if has_windows else 0.40
+            return behavior.target_value * score if behavior.target_value else score
+
+        # Glazing ratios declared per room type, from "<room_type>_window" structures.
+        ratios_by_type: Dict[str, List[float]] = {}
+        for s in structures.values():
+            name = (s.name or '').lower()
+            if 'window' not in name and 'glazing' not in name:
+                continue
+            dims = s.dimensions or {}
+            if 'window_ratio' not in dims:
+                continue
+            rtype = name.split('_window')[0].split('_glazing')[0].strip()
+            try:
+                ratios_by_type.setdefault(rtype, []).append(float(dims['window_ratio']))
+            except (TypeError, ValueError):
+                continue
+
         has_hvac = any(
-            s.structure_type.value == 'mep' and any(
-                keyword in s.name.lower() 
-                for keyword in ['hvac', 'ventilation', 'air', 'duct']
-            )
+            getattr(s.structure_type, 'value', str(s.structure_type)) == 'mep'
+            and any(k in (s.name or '').lower() for k in ('hvac', 'ventilation', 'air', 'duct'))
             for s in structures.values()
         )
-        
-        has_windows = any('window' in s.name.lower() for s in structures.values())
-        has_vents = any('vent' in s.name.lower() or 'grille' in s.name.lower() for s in structures.values())
-        
-        if has_hvac:
-            ventilation_score = 1.0
-        elif has_windows and has_vents:
-            ventilation_score = 0.85
-        elif has_windows:
-            ventilation_score = 0.75
-        else:
-            ventilation_score = 0.40
-        
-        logger.debug(f"    Ventilation score: {ventilation_score:.2f}")
-        return behavior.target_value * ventilation_score if behavior.target_value else ventilation_score
+
+        # m³/s delivered per m² of openable area (greater of wind and stack)
+        q_per_m2 = max(
+            self._VENT_WIND_COEFF * self._VENT_WIND_SPEED,
+            (self._VENT_CD / 3.0) * float(np.sqrt(
+                9.81 * self._VENT_OPENING_H * self._VENT_DELTA_T / self._VENT_T_MEAN
+            )),
+        )
+        # A mechanical system supplies its design rate everywhere it serves.
+        ach_mech = (
+            self._VENT_MECH_RATE * 3600.0 * self._VENT_MECH_BOOST / 3.0
+        ) if has_hvac else 0.0
+
+        weighted, total_area = 0.0, 0.0
+        for r in rooms.values():
+            area = float(getattr(r, 'area', 0.0) or 0.0)
+            height = float(getattr(r, 'height', 3.0) or 3.0)
+            if area <= 0:
+                continue
+            rtype = (getattr(r, 'room_type', '') or '').lower()
+            rlist = ratios_by_type.get(rtype, [])
+            ratio = float(np.mean(rlist)) if rlist else 0.0
+            # ACH from openings: area cancels, leaving glazing-ratio / height
+            a_open = self._VENT_OPENABLE_FRAC * ratio * area
+            ach_nat = (q_per_m2 * a_open) * 3600.0 / (area * height)
+            # mechanical rate expressed against this room's own height
+            ach_room = (self._VENT_INFILTRATION + ach_nat
+                        + (ach_mech * 3.0 / height if has_hvac else 0.0))
+            weighted += ach_room * area
+            total_area += area
+
+        if total_area <= 0:
+            return behavior.target_value * 0.40 if behavior.target_value else 0.40
+
+        ach = weighted / total_area
+        performance_ratio = min(2.0, ach / self._VENT_PURGE_TARGET)
+        logger.debug(f"    Ventilation: {ach:.2f} ACH, ratio={performance_ratio:.2f}")
+        return behavior.target_value * performance_ratio if behavior.target_value else ach
     
     def _initialize_material_properties(self) -> Dict[str, Dict[str, float]]:
         """Initialize material thermal and acoustic properties"""
