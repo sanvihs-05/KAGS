@@ -84,3 +84,48 @@ def test_opaque_envelope_dominates_the_glazing_in_the_area_weighting():
 def test_missing_envelope_falls_back_without_crashing():
     bc = BehaviorCalculator()
     assert bc._calculate_thermal_behavior(NS(target_value=5.0), {}, NS(layout=None)) > 0
+
+
+def test_refinement_materially_improves_thermal():
+    """Type-1 reformulation used to append a `thermal_insulation` element with no
+    `area`, so the area-weighted average gave it a weight of 1 against a ~190 m²
+    wall and a 250 m² roof — the loop believed it had addressed the deviation
+    while the score moved by well under a percent. Upgrading the build-up has to
+    show up."""
+    from backend.agents.refinement_agent import RefinementAgent
+    from backend.core.fbsl_models import (FBSLLayoutNode, Layout, Room,
+                                          Structure, StructureType)
+
+    node = FBSLLayoutNode()
+    node.layout = Layout()
+    room = Room(name="Living", room_type="living_room", area=250.0)
+    node.layout.rooms = {room.room_id: room}
+    for name, material, area in (("exterior_wall", "insulated_timber_frame", 190.0),
+                                 ("roof", "insulated_roof", 250.0)):
+        node.add_structure(Structure(name=name, structure_type=StructureType.WALL,
+                                     material_type=material, category="envelope",
+                                     dimensions={"area": area, "thickness": 0.3}))
+
+    bc = BehaviorCalculator()
+    before = bc._calculate_thermal_behavior(NS(target_value=5.0), node.structures, node)
+    RefinementAgent()._add_thermal_structure(node)
+    after = bc._calculate_thermal_behavior(NS(target_value=5.0), node.structures, node)
+
+    assert after - before > 1.0, (before, after)
+    assert {s.material_type for s in node.structures.values()} == {
+        "high_performance_envelope", "high_performance_roof"}
+
+
+def test_refinement_without_an_envelope_adds_a_weighted_layer():
+    """Fallback path: an insulation layer must carry an area, or the calculator
+    weights it at 1.0 and effectively ignores it."""
+    from backend.agents.refinement_agent import RefinementAgent
+    from backend.core.fbsl_models import FBSLLayoutNode, Layout, Room
+
+    node = FBSLLayoutNode()
+    node.layout = Layout()
+    room = Room(name="Living", room_type="living_room", area=100.0)
+    node.layout.rooms = {room.room_id: room}
+    RefinementAgent()._add_thermal_structure(node)
+    added = [s for s in node.structures.values() if s.name == "thermal_insulation"]
+    assert added and (added[0].dimensions or {}).get("area", 0) > 1.0
