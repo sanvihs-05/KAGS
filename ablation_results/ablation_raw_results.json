@@ -13,7 +13,11 @@
         "sustainability": 0.4625,
         "top_variant": "aggregated_hybrid",
         "n_prototypes": 5,
-        "time_s": 37.79,
+        "time_s": 21.55,
+        "arm_verified": {
+          "ok": true,
+          "evidence": "method=Graph of Thought, got_graph=True, real physics calls=36"
+        },
         "drop_pct": 0.0
       },
       {
@@ -26,7 +30,11 @@
         "sustainability": 0.5458,
         "top_variant": "central_circulation",
         "n_prototypes": 4,
-        "time_s": 34.66,
+        "time_s": 15.9,
+        "arm_verified": {
+          "ok": true,
+          "evidence": "method=Traditional"
+        },
         "drop_pct": -0.15
       },
       {
@@ -39,7 +47,11 @@
         "sustainability": 0.4625,
         "top_variant": "aggregated_hybrid",
         "n_prototypes": 5,
-        "time_s": 39.32,
+        "time_s": 19.35,
+        "arm_verified": {
+          "ok": true,
+          "evidence": "precedents_found=0"
+        },
         "drop_pct": -0.11
       },
       {
@@ -52,7 +64,11 @@
         "sustainability": 0.5042,
         "top_variant": "aggregated_hybrid",
         "n_prototypes": 5,
-        "time_s": 14.28,
+        "time_s": 5.58,
+        "arm_verified": {
+          "ok": true,
+          "evidence": "convergence_iterations=[0]"
+        },
         "drop_pct": -0.51
       },
       {
@@ -65,7 +81,11 @@
         "sustainability": 0.5339,
         "top_variant": "aggregated_hybrid",
         "n_prototypes": 5,
-        "time_s": 5024.91,
+        "time_s": 17.17,
+        "arm_verified": {
+          "ok": true,
+          "evidence": "stub calls=26, real calls=0 (any real call means a call site was missed)"
+        },
         "drop_pct": 4.32
       },
       {
@@ -78,7 +98,11 @@
         "sustainability": 0.4625,
         "top_variant": "aggregated_hybrid",
         "n_prototypes": 5,
-        "time_s": 47.68,
+        "time_s": 15.46,
+        "arm_verified": {
+          "ok": true,
+          "evidence": "composite=0.830454 vs equal-weight mean=0.830454"
+        },
         "drop_pct": 5.16
       },
       {
@@ -91,7 +115,11 @@
         "sustainability": 0.3637,
         "top_variant": "aggregated_hybrid",
         "n_prototypes": 5,
-        "time_s": 36.71,
+        "time_s": 14.29,
+        "arm_verified": {
+          "ok": true,
+          "evidence": "5 rooms, distinct y=[0.0]"
+        },
         "drop_pct": 4.58
       }
     ]
@@ -110,7 +138,11 @@
         "sustainability": 0.5296,
         "top_variant": "functional_priority+compact_layout",
         "n_prototypes": 8,
-        "time_s": 81.92,
+        "time_s": 26.45,
+        "arm_verified": {
+          "ok": true,
+          "evidence": "method=Graph of Thought, got_graph=True, real physics calls=63"
+        },
         "drop_pct": 0.0
       },
       {
@@ -123,7 +155,11 @@
         "sustainability": 0.5415,
         "top_variant": "central_circulation",
         "n_prototypes": 6,
-        "time_s": 67.05,
+        "time_s": 19.9,
+        "arm_verified": {
+          "ok": true,
+          "evidence": "method=Traditional"
+        },
         "drop_pct": 2.2
       },
       {
@@ -136,7 +172,11 @@
         "sustainability": 0.5296,
         "top_variant": "functional_priority+compact_layout",
         "n_prototypes": 8,
-        "time_s": 81.12,
+        "time_s": 26.21,
+        "arm_verified": {
+          "ok": true,
+          "evidence": "precedents_found=0"
+        },
         "drop_pct": -1.57
       },
       {
@@ -149,7 +189,11 @@
         "sustainability": 0.5501,
         "top_variant": "functional_priority+natural_ventilation",
         "n_prototypes": 8,
-        "time_s": 21.21,
+        "time_s": 7.07,
+        "arm_verified": {
+          "ok": true,
+          "evidence": "convergence_iterations=[0]"
+        },
         "drop_pct": 0.85
       },
       {
@@ -162,7 +206,11 @@
         "sustainability": 0.5798,
         "top_variant": "spatial_compactness+natural_ventilation",
         "n_prototypes": 8,
-        "time_s": 89.03,
+        "time_s": 34.74,
+        "arm_verified": {
+          "ok": true,
+          "evidence": "stub calls=47, real calls=0 (any real call means a call site was missed)"
+        },
         "drop_pct": 8.07
       },
       {
@@ -175,7 +223,11 @@
         "sustainability": 0.5296,
         "top_variant": "functional_priority+compact_layout",
         "n_prototypes": 8,
-        "time_s": 44.16,
+        "time_s": 37.97,
+        "arm_verified": {
+          "ok": true,
+          "evidence": "composite=0.840074 vs equal-weight mean=0.840074"
+        },
         "drop_pct": 4.41
       },
       {
@@ -188,7 +240,11 @@
         "sustainability": 0.3924,
         "top_variant": "functional_priority+natural_ventilation",
         "n_prototypes": 8,
-        "time_s": 76.11,
+        "time_s": 29.91,
+        "arm_verified": {
+          "ok": true,
+          "evidence": "8 rooms, distinct y=[0.0]"
+        },
         "drop_pct": 7.84
       }
     ]
@@ -207,7 +263,11 @@
         "sustainability": 0.5036,
         "top_variant": "functional_priority+natural_ventilation",
         "n_prototypes": 10,
-        "time_s": 89.07,
+        "time_s": 56.33,
+        "arm_verified": {
+          "ok": true,
+          "evidence": "method=Graph of Thought, got_graph=True, real physics calls=86"
+        },
         "drop_pct": 0.0
       },
       {
@@ -220,7 +280,11 @@
         "sustainability": 0.5368,
         "top_variant": "central_circulation",
         "n_prototypes": 6,
-        "time_s": 69.23,
+        "time_s": 25.4,
+        "arm_verified": {
+          "ok": true,
+          "evidence": "method=Traditional"
+        },
         "drop_pct": 0.26
       },
       {
@@ -233,7 +297,11 @@
         "sustainability": 0.5751,
         "top_variant": "spatial_compactness+natural_ventilation",
         "n_prototypes": 10,
-        "time_s": 91.89,
+        "time_s": 63.36,
+        "arm_verified": {
+          "ok": true,
+          "evidence": "precedents_found=0"
+        },
         "drop_pct": -1.8
       },
       {
@@ -246,7 +314,11 @@
         "sustainability": 0.5453,
         "top_variant": "functional_priority+natural_ventilation",
         "n_prototypes": 10,
-        "time_s": 36.88,
+        "time_s": 12.55,
+        "arm_verified": {
+          "ok": true,
+          "evidence": "convergence_iterations=[0]"
+        },
         "drop_pct": -0.91
       },
       {
@@ -259,7 +331,11 @@
         "sustainability": 0.5249,
         "top_variant": "balanced+compact_layout",
         "n_prototypes": 10,
-        "time_s": 111.48,
+        "time_s": 48.16,
+        "arm_verified": {
+          "ok": true,
+          "evidence": "stub calls=59, real calls=0 (any real call means a call site was missed)"
+        },
         "drop_pct": 2.35
       },
       {
@@ -272,7 +348,11 @@
         "sustainability": 0.5036,
         "top_variant": "functional_priority+natural_ventilation",
         "n_prototypes": 10,
-        "time_s": 99.59,
+        "time_s": 43.03,
+        "arm_verified": {
+          "ok": true,
+          "evidence": "composite=0.801797 vs equal-weight mean=0.801797"
+        },
         "drop_pct": 4.29
       },
       {
@@ -285,7 +365,11 @@
         "sustainability": 0.3681,
         "top_variant": "functional_priority+natural_ventilation",
         "n_prototypes": 10,
-        "time_s": 92.74,
+        "time_s": 52.03,
+        "arm_verified": {
+          "ok": true,
+          "evidence": "14 rooms, distinct y=[0.0]"
+        },
         "drop_pct": 9.73
       }
     ]

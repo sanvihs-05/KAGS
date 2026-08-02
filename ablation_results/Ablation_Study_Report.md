@@ -43,8 +43,9 @@ Three scenarios span the adaptive-complexity range:
 
 ## Run history, and a defect this study had to fix in itself
 
-This study has been executed four times. The history matters, because two of those runs reported
-numbers that were not measuring what their labels claimed.
+This study has been executed five times. The history matters, because three of those runs reported
+numbers that were not measuring what their labels claimed — and in each case the giveaway was a
+number that looked *reasonable* rather than one that looked wrong.
 
 **Runs 1–2** produced *byte-identical* composites across all 21 cells despite substantial pipeline
 changes in between. That stability was not validation — it was a symptom. Inspecting the encoded
@@ -63,12 +64,38 @@ kept recomputing real physics throughout — **the arm never ablated anything.**
 this report previously carried (0.5 %, 1.37 %, 2.24 %) was measuring designs whose behaviours had
 been recomputed from structures regardless.
 
-**Run 4 — the data above** — stubs both calculators, verified by identity check before the run.
-The corrected S→Bs figures are three to four times larger than the ones they replace.
+**Run 4** stubbed both calculators. The corrected S→Bs figures came out three to four times larger
+than the ones they replaced.
 
-The lesson is worth stating rather than quietly correcting: an ablation arm that silently fails to
-ablate reports a *small effect*, which is indistinguishable from a real small effect. Only the
-implausibly exact 0.00 % made it visible.
+**Run 5 — the data above** — makes every arm prove it fired, because the lesson from run 3 is that
+an arm which silently fails to ablate reports a *small effect*, and a small effect is
+indistinguishable from a real one. Only the implausibly exact 0.00 % made that bug visible; nothing
+would have caught it if the number had been 1.4 %.
+
+Each configuration now carries a marker that must be observable in its own output, recorded as
+`arm_verified` beside the numbers it validates:
+
+| Arm | What must be true |
+|---|---|
+| Full Framework (Baseline) | `method` is Graph of Thought, `got_graph` present, **and physics actually ran** |
+| Without GoT Exploration | `method` is no longer Graph of Thought |
+| Without RAG | `precedents_found == 0` |
+| Without Refinement Agent | every design has `convergence_iterations == 0` |
+| Without Physics (S→Bs) | the stub was called **and no real calculator call occurred** |
+| Equal-Weight Scoring | composite equals the unweighted mean of the five sub-scores |
+| Naive Layout Placement | every room sits at `y = 0` (the stub's single row) |
+
+**All 21 cells verified.** The physics arm is instrumented rather than inferred:
+`BehaviorCalculator.calculate_actual_behaviors` is wrapped at the *class* level as a tripwire, so
+any instance an arm forgets to stub still routes through it and is counted. The baseline logs
+36 / 63 / 86 real physics calls; the ablated arm logs 26 / 47 / 59 stub calls and **zero** real
+calls. Had this existed earlier, run 3's bug would have failed loudly on its first execution.
+
+*(An earlier version of this check inferred the arm from the data — "are behaviours still at
+0.9 × target?" — and produced two false alarms. `_fit_rooms_to_total` rewrites area targets to
+match scaled rooms and Type-2 reformulation relaxes targets by ±20 %, neither touching
+`actual_value`, so the ratio drifts for legitimate reasons. Counting calls is direct evidence; the
+ratio was a proxy that did not survive contact with the pipeline.)*
 
 ---
 
@@ -78,37 +105,37 @@ implausibly exact 0.00 % made it visible.
 
 | Configuration | Composite | Δ vs baseline | Time (s) |
 |---|---|---|---|
-| **Full Framework (Baseline)** | **0.8757** | — | 37.79 |
-| Without GoT Exploration | 0.877 | −0.15 % (no change) | 34.66 |
-| Without RAG (FAISS Retrieval) | 0.8767 | −0.11 % (no change) | 39.32 |
-| Without Refinement Agent | 0.8802 | −0.51 % (no change) | 14.28 |
-| Without Physics-Based Behavior Analysis | 0.8379 | **+4.32 %** | 5024.91 ⚠ |
-| Equal-Weight Scoring (No Tuned MCDA Weights) | 0.8305 | **+5.16 %** | 47.68 |
-| Naive Layout Placement (No Zoning/Treemap) | 0.8356 | **+4.58 %** | 36.71 |
+| **Full Framework (Baseline)** | **0.8757** | — | 21.55 |
+| Without GoT Exploration | 0.877 | −0.15 % (no change) | 15.90 |
+| Without RAG (FAISS Retrieval) | 0.8767 | −0.11 % (no change) | 19.35 |
+| Without Refinement Agent | 0.8802 | −0.51 % (no change) | 5.58 |
+| Without Physics-Based Behavior Analysis | 0.8379 | **+4.32 %** | 17.17 |
+| Equal-Weight Scoring (No Tuned MCDA Weights) | 0.8305 | **+5.16 %** | 15.46 |
+| Naive Layout Placement (No Zoning/Treemap) | 0.8356 | **+4.58 %** | 14.29 |
 
 ### 3-Bedroom Townhouse (Medium complexity)
 
 | Configuration | Composite | Δ vs baseline | Time (s) |
 |---|---|---|---|
-| **Full Framework (Baseline)** | **0.8789** | — | 81.92 |
-| Without GoT Exploration | 0.8596 | +2.20 % | 67.05 |
-| Without RAG (FAISS Retrieval) | 0.8927 | −1.57 % | 81.12 |
-| Without Refinement Agent | 0.8714 | +0.85 % (no change) | 21.21 |
-| Without Physics-Based Behavior Analysis | 0.808 | **+8.07 %** | 89.03 |
-| Equal-Weight Scoring (No Tuned MCDA Weights) | 0.8401 | **+4.41 %** | 44.16 |
-| Naive Layout Placement (No Zoning/Treemap) | 0.81 | **+7.84 %** | 76.11 |
+| **Full Framework (Baseline)** | **0.8789** | — | 26.45 |
+| Without GoT Exploration | 0.8596 | +2.20 % | 19.90 |
+| Without RAG (FAISS Retrieval) | 0.8927 | −1.57 % | 26.21 |
+| Without Refinement Agent | 0.8714 | +0.85 % (no change) | 7.07 |
+| Without Physics-Based Behavior Analysis | 0.808 | **+8.07 %** | 34.74 |
+| Equal-Weight Scoring (No Tuned MCDA Weights) | 0.8401 | **+4.41 %** | 37.97 |
+| Naive Layout Placement (No Zoning/Treemap) | 0.81 | **+7.84 %** | 29.91 |
 
 ### 4-Bedroom Family Home (High complexity)
 
 | Configuration | Composite | Δ vs baseline | Time (s) |
 |---|---|---|---|
-| **Full Framework (Baseline)** | **0.8377** | — | 89.07 |
-| Without GoT Exploration | 0.8355 | +0.26 % (no change) | 69.23 |
-| Without RAG (FAISS Retrieval) | 0.8528 | −1.80 % | 91.89 |
-| Without Refinement Agent | 0.8453 | −0.91 % (no change) | 36.88 |
-| Without Physics-Based Behavior Analysis | 0.818 | +2.35 % | 111.48 |
-| Equal-Weight Scoring (No Tuned MCDA Weights) | 0.8018 | **+4.29 %** | 99.59 |
-| Naive Layout Placement (No Zoning/Treemap) | 0.7562 | **+9.73 %** | 92.74 |
+| **Full Framework (Baseline)** | **0.8377** | — | 56.33 |
+| Without GoT Exploration | 0.8355 | +0.26 % (no change) | 25.40 |
+| Without RAG (FAISS Retrieval) | 0.8528 | −1.80 % | 63.36 |
+| Without Refinement Agent | 0.8453 | −0.91 % (no change) | 12.55 |
+| Without Physics-Based Behavior Analysis | 0.818 | +2.35 % | 48.16 |
+| Equal-Weight Scoring (No Tuned MCDA Weights) | 0.8018 | **+4.29 %** | 43.03 |
+| Naive Layout Placement (No Zoning/Treemap) | 0.7562 | **+9.73 %** | 52.03 |
 
 *("Δ" is drop in composite when the feature is removed; "no change" marks a difference within
 run-to-run LLM-extraction noise, not a real effect either direction.)*
@@ -132,10 +159,10 @@ not an arbitrary choice: it produces higher-scoring designs by the framework's o
 
 **3. The refinement (convergence) loop is nearly free to skip, but expensive to run.**
 Removing it changes composite by well under 1 % in every scenario — but cuts wall-clock time by
-**2.4–4×** (81.92 s → 21.21 s; 89.07 s → 36.88 s). *(Successive runs of this same study measured
-10–16×, then 3–5×, now 2.4–4×, with the composites moving for unrelated reasons each time.
-Wall-clock here is dominated by network latency to the hosted LLM and by machine load, so treat
-the ratio as indicative and the absolute seconds as not comparable across runs at all.)* This
+**3.7–4.5×** (26.45 s → 7.07 s; 56.33 s → 12.55 s). *(Successive runs of this same study measured
+10–16×, then 3–5×, then 2.4–4×, now 3.7–4.5×, on identical composites. Wall-clock here is
+dominated by network latency to the hosted LLM and by machine load, so treat the ratio as
+indicative and the absolute seconds as not comparable across runs at all.)* This
 corroborates the architecture doc's stated
 limitation: because the encoder + treemap already produce spec-meeting designs, most behaviors
 start satisfied, so the Gero reformulation loop iterates without finding anything to fix. The loop
@@ -199,10 +226,11 @@ constant that happens to sit at 0.94.
   apartment and townhouse briefs contain none, so on those scenarios the effect is still dominated
   by area behaviors. Isolating the four physics models would need briefs with comfort language
   across all three complexity levels, and an arm that stubs only the comfort calculators.
-- **One cell's timing is unusable.** The apartment's S→Bs run recorded 5,024.91 s (marked ⚠),
-  which is not plausible against the run's total elapsed time and is almost certainly a stalled
-  LLM request. Its composite is unaffected — that is computed from the design, not the clock — but
-  the timing must not be read as a cost of ablating physics.
+- **Timings occasionally include a stalled request.** An earlier run of these same cells recorded
+  5,024.91 s for one of them — not plausible against that run's elapsed time, and almost certainly
+  a hung LLM call. No cell in the current run exceeds 64 s, but the composites were identical
+  across both, which is the point: a stalled request corrupts the timing and leaves the score
+  untouched, because the score is computed from the design and not the clock.
 - **Wall-clock times are not comparable across runs.** They are dominated by network latency to
   the hosted LLM and by machine load; the same 21 cells produced 10–16× refinement speed-ups on
   one run, 3–5× on the next and 2.4–4× on this one. Read the timings as order-of-magnitude only.

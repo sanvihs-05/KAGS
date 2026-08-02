@@ -37,6 +37,7 @@ logging.basicConfig(level=logging.WARNING)  # keep the run quiet; we print our o
 
 from backend.pipeline.orchestrator import PipelineOrchestrator  # noqa: E402
 from backend.agents.scoring_agent import ScoringAgent  # noqa: E402
+from backend.core.behavior_calculator import BehaviorCalculator  # noqa: E402
 
 SCENARIOS = {
     "simple_apartment": {
@@ -94,10 +95,33 @@ def _empty_research(node, depth=3):
     return {'similar_spaces': [], 'room_precedents': {}, 'recommendations': []}
 
 
+# Call counters backing the S->Bs arm's verification. Inferring from the data
+# ("are behaviours still at 0.9 x target?") does not survive contact with the
+# pipeline: `_fit_rooms_to_total` rewrites area targets to match scaled rooms and
+# Type-2 reformulation relaxes targets by +/-20 %, both without touching
+# actual_value, so the ratio drifts for legitimate reasons. Counting the calls
+# is direct evidence instead of a proxy.
+_CALLS = {"stub": 0, "real": 0}
+
+_ORIGINAL_CALC = BehaviorCalculator.calculate_actual_behaviors
+
+
+def _counted_real_calc(self, node):
+    """Class-level tripwire: any BehaviorCalculator instance the arm forgot to
+    stub still routes through here and is counted, so a missed call site fails
+    the arm loudly instead of quietly reporting a small effect."""
+    _CALLS["real"] += 1
+    return _ORIGINAL_CALC(self, node)
+
+
+BehaviorCalculator.calculate_actual_behaviors = _counted_real_calc
+
+
 def _identity_behaviors(node):
     """Ablation stand-in for physics-based S->Bs analysis: returns the node
     unchanged, so scoring uses the encoder's static initial actual_value
     estimates instead of behaviors computed from real structures/geometry."""
+    _CALLS["stub"] += 1
     return node
 
 
@@ -170,17 +194,13 @@ def verify_arm(config_name: str, result: Dict[str, Any]) -> Dict[str, Any]:
     designs = result.get("designs") or []
     fbsl0 = (designs[0].get("fbsl") if designs else {}) or {}
 
-    def _behaviour_ratios():
-        out = []
-        for b in (fbsl0.get("behaviors") or {}).values():
-            t, a = b.get("target_value"), b.get("actual_value")
-            if t:
-                out.append(a / t)
-        return out
-
     if config_name == "Full Framework (Baseline)":
-        ok = result.get("method") == "Graph of Thought" and bool(result.get("got_graph"))
-        return {"ok": ok, "evidence": f"method={result.get('method')}, got_graph={bool(result.get('got_graph'))}"}
+        # The baseline is the control for the S->Bs arm: physics must have run.
+        ok = (result.get("method") == "Graph of Thought" and bool(result.get("got_graph"))
+              and _CALLS["real"] > 0)
+        return {"ok": ok, "evidence": f"method={result.get('method')}, "
+                                      f"got_graph={bool(result.get('got_graph'))}, "
+                                      f"real physics calls={_CALLS['real']}"}
 
     if config_name == "Without GoT Exploration":
         ok = result.get("method") != "Graph of Thought"
@@ -195,13 +215,13 @@ def verify_arm(config_name: str, result: Dict[str, Any]) -> Dict[str, Any]:
         return {"ok": all(i == 0 for i in iters), "evidence": f"convergence_iterations={sorted(set(iters))}"}
 
     if config_name == "Without Physics-Based Behavior Analysis (S->Bs)":
-        # The identity stub leaves every behaviour at the encoder's static
-        # estimate, which is exactly 0.9 x target.
-        ratios = _behaviour_ratios()
-        stale = sum(1 for r in ratios if abs(r - 0.9) < 0.01)
-        frac = stale / len(ratios) if ratios else 0.0
-        return {"ok": frac > 0.7,
-                "evidence": f"{stale}/{len(ratios)} behaviours still at 0.9x target ({frac:.0%})"}
+        # Direct evidence: the stub ran, and NO unstubbed calculator instance
+        # slipped through. This is the arm that silently failed for the whole
+        # history of the study, so it gets the strongest check.
+        ok = _CALLS["stub"] > 0 and _CALLS["real"] == 0
+        return {"ok": ok,
+                "evidence": f"stub calls={_CALLS['stub']}, real calls={_CALLS['real']} "
+                            f"(any real call means a call site was missed)"}
 
     if config_name == "Equal-Weight Scoring (No Tuned MCDA Weights)":
         s = (designs[0].get("scores") if designs else {}) or {}
@@ -225,6 +245,7 @@ def verify_arm(config_name: str, result: Dict[str, Any]) -> Dict[str, Any]:
 
 
 async def run_one(scenario_key: str, brief: str, config_name: str) -> Dict[str, Any]:
+    _CALLS["stub"] = _CALLS["real"] = 0   # per-cell, so counts describe this run only
     orch = build_orchestrator(config_name)
     overrides = request_overrides(config_name)
     request = {
