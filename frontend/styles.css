@@ -176,6 +176,9 @@ textarea:focus, input:focus {
   border-radius: 12px; font-size: 13.5px;
   background: var(--surface); border: 1px solid var(--border); color: var(--ink-2);
 }
+/* `display:flex` above beats the browser default for [hidden], so an empty
+   status bar rendered as a stray box until this rule. */
+.status[hidden] { display: none; }
 .status.error { color: #d03b3b; border-color: color-mix(in srgb, #d03b3b 40%, var(--border)); }
 .spinner {
   width: 15px; height: 15px; border-radius: 50%;
@@ -183,6 +186,34 @@ textarea:focus, input:focus {
   animation: spin .7s linear infinite; flex: none;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Saved runs ── */
+.saved { padding: 18px 20px; margin-bottom: 22px; }
+.saved-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.saved-head h2 { font-size: 15px; }
+.btn-sm { padding: 6px 12px; font-size: 12.5px; }
+.saved-list { display: flex; flex-direction: column; gap: 6px; max-height: 320px; overflow-y: auto; }
+.saved-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 12px; border-radius: 10px;
+  background: var(--surface-2); border: 1px solid var(--border);
+  transition: border-color .15s, background .15s;
+}
+.saved-row:hover { border-color: color-mix(in srgb, var(--kept) 45%, var(--border)); }
+.saved-row.active { border-color: var(--kept); background: color-mix(in srgb, var(--kept) 10%, var(--surface-2)); }
+.sr-main { flex: 1; min-width: 0; }
+.sr-name { font-size: 13.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sr-meta { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+.sr-actions { display: flex; align-items: center; gap: 6px; flex: none; }
+.icon-btn {
+  font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+  width: 28px; height: 28px; border-radius: 8px; flex: none;
+  background: transparent; color: var(--muted);
+  border: 1px solid var(--border);
+  transition: background .15s, color .15s, border-color .15s;
+}
+.icon-btn.danger:hover { background: color-mix(in srgb, #d03b3b 14%, transparent); color: #d03b3b; border-color: #d03b3b; }
+.design-head .card-del { align-self: flex-start; }
 
 /* ── Summary tiles ── */
 .summary {

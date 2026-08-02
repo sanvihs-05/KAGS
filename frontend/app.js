@@ -154,6 +154,8 @@ function renderDesign(d, rank) {
         <div class="num">${f3(s.composite)}</div>
         <div class="lbl">composite</div>
       </div>
+      ${d.prototype_id ? `<button type="button" class="icon-btn danger card-del"
+        data-proto="${esc(d.prototype_id)}" title="Delete this prototype">✕</button>` : ''}
     </div>
     <div class="meters">${meters}</div>
     ${(hasPlan || hasAdj) ? `
@@ -170,6 +172,12 @@ function renderDesigns(data, topK) {
   const designs = (data.designs || []).slice(0, topK);
   wrap.innerHTML = designs.map((d, i) => renderDesign(d, i + 1)).join('');
   $('designs-section').hidden = designs.length === 0;
+
+  // Per-prototype delete (only present for prototypes loaded from the store)
+  wrap.querySelectorAll('.card-del').forEach((btn) => {
+    btn.addEventListener('click', () =>
+      deletePrototype(btn.dataset.proto, btn.closest('.design')));
+  });
 }
 
 /* ── render: GoT prune chart ─────────────────────────────── */
@@ -290,6 +298,104 @@ function positionThreshold() {
     `position:absolute;top:-6px;bottom:0;left:${left.toFixed(1)}px;width:2px;background:var(--source);z-index:4;`;
 }
 
+/* ── saved runs (structured store) ───────────────────────── */
+let CURRENT_RUN_ID = null;
+
+function fmtDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return isNaN(d) ? iso : d.toLocaleString(undefined,
+    { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+async function refreshSaved() {
+  const section = $('saved-section'), list = $('saved-list');
+  try {
+    const resp = await fetch('/results', { cache: 'no-store' });
+    if (!resp.ok) throw new Error(resp.status);
+    const data = await resp.json();
+    const runs = data.runs || [];
+    const st = data.stats || {};
+    $('saved-stats').textContent = runs.length
+      ? `${st.runs} run${st.runs === 1 ? '' : 's'} · ${st.prototypes} prototypes · ${(st.db_bytes / 1e6).toFixed(1)} MB`
+      : 'No runs stored yet — generate one and it will be saved here.';
+
+    list.innerHTML = runs.map((r) => `
+      <div class="saved-row${r.run_id === CURRENT_RUN_ID ? ' active' : ''}" data-run="${esc(r.run_id)}">
+        <div class="sr-main">
+          <div class="sr-name">${esc(r.project_name || 'Untitled project')}</div>
+          <div class="sr-meta">${fmtDate(r.created_at)} · ${r.stored_prototypes} prototypes${
+            r.top_score != null ? ` · top ${Number(r.top_score).toFixed(3)}` : ''}${
+            r.complexity_level ? ` · ${esc(r.complexity_level)}` : ''}</div>
+        </div>
+        <div class="sr-actions">
+          <button type="button" class="btn btn-ghost btn-sm" data-act="load">Open</button>
+          <button type="button" class="icon-btn danger" data-act="del" title="Delete this run">✕</button>
+        </div>
+      </div>`).join('');
+    section.hidden = false;
+
+    list.querySelectorAll('.saved-row').forEach((row) => {
+      const id = row.dataset.run;
+      row.querySelector('[data-act="load"]').addEventListener('click', () => openRun(id));
+      row.querySelector('[data-act="del"]').addEventListener('click', () => deleteRun(id, row));
+    });
+  } catch (err) {
+    // No backend (static/sample mode) — keep the panel out of the way.
+    section.hidden = true;
+  }
+}
+
+async function openRun(runId) {
+  setStatus('Loading stored run…', 'busy');
+  try {
+    const resp = await fetch(`/results/${encodeURIComponent(runId)}`, { cache: 'no-store' });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    CURRENT_RUN_ID = runId;
+    if (data.project_name) $('project_name').value = data.project_name;
+    if (data.brief) $('requirements').value = data.brief;
+    setStatus(`Loaded stored run — ${(data.designs || []).length} prototypes.`);
+    render(data);
+    refreshSaved();
+  } catch (err) {
+    setStatus('Could not load run: ' + err.message, 'error');
+  }
+}
+
+async function deleteRun(runId, row) {
+  const name = row.querySelector('.sr-name').textContent;
+  if (!confirm(`Delete "${name}" and all of its prototypes?\n\nThis cannot be undone.`)) return;
+  try {
+    const resp = await fetch(`/results/${encodeURIComponent(runId)}`, { method: 'DELETE' });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    if (runId === CURRENT_RUN_ID) {
+      CURRENT_RUN_ID = null;
+      ['summary', 'designs-section', 'got-section'].forEach((id) => { $(id).hidden = true; });
+    }
+    setStatus(`Deleted "${name}".`);
+    refreshSaved();
+  } catch (err) {
+    setStatus('Delete failed: ' + err.message, 'error');
+  }
+}
+
+async function deletePrototype(prototypeId, card) {
+  if (!CURRENT_RUN_ID) return;
+  if (!confirm('Delete this prototype from the stored run?\n\nThis cannot be undone.')) return;
+  try {
+    const resp = await fetch(
+      `/results/${encodeURIComponent(CURRENT_RUN_ID)}/prototypes/${encodeURIComponent(prototypeId)}`,
+      { method: 'DELETE' });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    card.remove();
+    setStatus('Prototype deleted.');
+    refreshSaved();
+  } catch (err) {
+    setStatus('Delete failed: ' + err.message, 'error');
+  }
+}
+
 /* ── main render ─────────────────────────────────────────── */
 function render(data) {
   window.__lastGoT = data.got_graph;
@@ -337,7 +443,9 @@ form.addEventListener('submit', async (ev) => {
       return;
     }
     setStatus(`Done — ${(data.designs || []).length} prototypes in ${Number(data.processing_time || 0).toFixed(1)}s.`);
+    CURRENT_RUN_ID = data.run_id || null;
     render(data);
+    refreshSaved();   // the run has just been persisted; show it in the list
   } catch (err) {
     setStatus('Could not reach the API (' + err.message + '). Start the backend with `uvicorn backend.main:app`, or use “Load sample run”.', 'error');
   } finally {
@@ -373,3 +481,7 @@ $('sample-btn').addEventListener('click', loadSample);
     loadSample();
   }
 }
+
+/* ── saved-runs panel: populate on load ──────────────────── */
+$('refresh-saved').addEventListener('click', refreshSaved);
+refreshSaved();
