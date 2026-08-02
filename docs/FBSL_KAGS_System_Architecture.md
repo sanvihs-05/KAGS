@@ -405,9 +405,22 @@ scorer's ratio is directly meaningful):
 - *Acoustic* — composite STC from material STC + a thickness bonus;
   `ratio = STC / 45`. **Why 45:** STC 45–50 is the normal target for separating
   living spaces.
-- *Lighting* — Daylight Factor from window area × glazing transmittance vs floor
-  area; `ratio = DF / 3`. **Why DF 3 %:** the accepted threshold for "well-lit"
-  habitable rooms.
+- *Lighting* — **BRE (Lynes) average daylight factor**, per room and
+  floor-area-weighted: `DF = (T·A_w·θ) / (A_total·(1−R²))` with T 0.70, visible
+  sky angle θ 75°, mean interior reflectance R 0.50, and `A_total` the room's
+  total *interior surface* (floor + ceiling + walls). `ratio = DF / 3`.
+  **Why DF 3 %:** the accepted threshold for "well-lit" habitable rooms.
+  **Why divide by interior surface, not floor area:** that is what makes room
+  proportion and ceiling height matter — a taller or more elongated room needs
+  more glazing for the same average daylight. The previous
+  `DF = window_ratio × 0.75 × 100` ignored geometry entirely and overstated DF
+  by ~5× (an 18 % glazing ratio read 13.5 %, an atrium-like figure, where this
+  gives a realistic ~2.5 %). A supplementary factor applies the BRE limiting-depth
+  rule `L/W + L/H_w ≤ 2/(1−R)`, scaling DF by `limit/actual` when a room is too
+  deep to daylight its back half — the standard states this as pass/fail, so the
+  continuous form is an approximation chosen to keep ranking smooth. No
+  orientation, sun path, latitude or obstruction survey: comparative, not a
+  compliance figure.
 - *Ventilation* — air changes per hour from the **actual opening geometry**, per
   room and floor-area-weighted to the dwelling. Natural flow takes the greater of
   the wind- and buoyancy-driven single-sided rates (BS 5925 / CIBSE AM10):

@@ -294,59 +294,122 @@ class BehaviorCalculator:
         
         return behavior.target_value * 0.80 if behavior.target_value else 0.80
     
+    @staticmethod
+    def _glazing_ratios_by_room_type(structures: Dict[str, Structure]) -> Dict[str, List[float]]:
+        """Map room type → declared glazing ratios, from "<room_type>_window"
+        structure names (the encoder's naming convention). Shared by the
+        daylight and ventilation models, which both need per-room opening area
+        rather than one building-wide average."""
+        out: Dict[str, List[float]] = {}
+        for s in structures.values():
+            name = (s.name or '').lower()
+            if not any(k in name for k in ('window', 'glazing', 'skylight', 'opening')):
+                continue
+            dims = s.dimensions or {}
+            if 'window_ratio' not in dims:
+                continue
+            rtype = re.split(r'_(window|glazing|skylight|opening)', name)[0].strip()
+            try:
+                out.setdefault(rtype, []).append(float(dims['window_ratio']))
+            except (TypeError, ValueError):
+                continue
+        return out
+
+    # --- Daylight constants (BRE average daylight factor, Lynes) -------------
+    _DF_TRANSMITTANCE = 0.70   # double glazing incl. frame and maintenance factors
+    _DF_SKY_ANGLE = 75.0       # degrees of visible sky — low-rise/suburban default
+    _DF_REFLECTANCE = 0.50     # area-weighted mean interior surface reflectance
+    _DF_WINDOW_HEAD = 2.1      # m — window head height above floor
+    _DF_TARGET = 3.0           # % — "well lit" habitable room
+
     def _calculate_lighting_behavior(
-        self, 
+        self,
         behavior: Behavior,
-        structures: Dict[str, Structure], 
+        structures: Dict[str, Structure],
         node: FBSLLayoutNode
     ) -> float:
-        """Calculate lighting performance (daylighting)"""
-        
-        window_structures = [
-            s for s in structures.values()
-            if any(keyword in s.name.lower() for keyword in ['window', 'opening', 'skylight', 'glass'])
-        ]
-        
-        has_windows = len(window_structures) > 0
+        """Average daylight factor per the BRE (Lynes) formula.
 
-        # Aggregate glazing. Prefer an explicit per-window 'window_ratio' (the
-        # glazing fraction the encoder sets); otherwise derive area from
-        # width x height. Fixes a field mismatch where windows carrying only
-        # 'window_ratio' were miscounted as 1x1 m = 1 m² each.
-        total_window_area = 0.0
-        declared_ratios = []
-        for window in window_structures:
-            dims = window.dimensions or {}
-            if 'window_ratio' in dims:
-                declared_ratios.append(float(dims['window_ratio']))
-            elif 'width' in dims or 'height' in dims:
-                total_window_area += dims.get('width', 1.0) * dims.get('height', 1.0)
-            else:
-                total_window_area += 1.0  # last-resort nominal glazing
+            DF = (T · A_w · θ) / (A_total · (1 − R²))
 
-        if node.layout and node.layout.rooms:
-            total_floor_area = sum(r.area for r in node.layout.rooms.values())
+        T = glazing transmittance, A_w = net glazed area, θ = visible sky angle,
+        A_total = total *interior surface* area of the room (floor + ceiling +
+        walls), R = mean interior reflectance.
 
-            if total_floor_area > 0:
-                if declared_ratios:
-                    # building glazing fraction = mean of declared per-room ratios
-                    window_ratio = float(np.mean(declared_ratios))
-                else:
-                    window_ratio = total_window_area / total_floor_area
-                glass_transmittance = 0.75
-                daylight_factor = window_ratio * glass_transmittance * 100
-                
-                target_df = 3.0
-                performance_ratio = min(2.0, daylight_factor / target_df)  # uncapped: reward exceeding target DF
-                
-                actual_value = behavior.target_value * performance_ratio if behavior.target_value else daylight_factor
-                logger.debug(f"    Lighting: DF={daylight_factor:.2f}%, ratio={performance_ratio:.2f}")
-                return actual_value
-        
-        if has_windows:
-            return behavior.target_value * 0.85 if behavior.target_value else 0.85
-        else:
+        This replaces `DF = window_ratio × 0.75 × 100`, which divided glazing by
+        floor area alone. That both ignored room geometry — a tall or deep room
+        needs more glazing for the same daylight — and was wrong by roughly 5×
+        in absolute terms: an 18 % glazing ratio came out at DF 13.5 %, an
+        atrium-like figure, where the BRE formula gives a realistic ~2.5 %.
+        Dividing by total interior surface rather than floor area is what makes
+        room proportion and ceiling height matter.
+
+        A supplementary penalty applies the BRE limiting-depth rule
+        (L/W + L/H_w ≤ 2/(1−R)): rooms deeper than the limit cannot daylight
+        their back half, so DF is scaled by limit/actual. That rule is
+        pass/fail in the standard; using it as a continuous factor is an
+        approximation, made here so the ranking degrades smoothly rather than
+        stepping. Windows are assumed to sit on the longer external wall (normal
+        practice), so depth is the room's shorter dimension.
+
+        Concept-stage estimate: no orientation, sun path, latitude, external
+        obstruction survey or internal partitions — θ and R are fixed defaults.
+        Comparative, not a compliance figure.
+        """
+        rooms = (node.layout.rooms if node.layout and node.layout.rooms else {}) or {}
+        ratios_by_type = self._glazing_ratios_by_room_type(structures)
+        has_windows = bool(ratios_by_type) or any(
+            'window' in (s.name or '').lower() for s in structures.values()
+        )
+
+        if not rooms:
+            if has_windows:
+                return behavior.target_value * 0.85 if behavior.target_value else 0.85
             return behavior.target_value * 0.60 if behavior.target_value else 0.60
+
+        depth_limit = 2.0 / max(1e-6, (1.0 - self._DF_REFLECTANCE))
+        weighted, total_area = 0.0, 0.0
+
+        for r in rooms.values():
+            area = float(getattr(r, 'area', 0.0) or 0.0)
+            if area <= 0:
+                continue
+            height = float(getattr(r, 'height', 3.0) or 3.0)
+            rtype = (getattr(r, 'room_type', '') or '').lower()
+            rlist = ratios_by_type.get(rtype, [])
+            ratio = float(np.mean(rlist)) if rlist else 0.0
+
+            # Plan dimensions; fall back to a square room when unknown.
+            w = float(getattr(r, 'width', 0) or 0)
+            l = float(getattr(r, 'length', 0) or 0)
+            if w <= 0 or l <= 0:
+                w = l = float(np.sqrt(area))
+            long_side, short_side = max(w, l), min(w, l)
+
+            a_glazed = ratio * area
+            # floor + ceiling + walls
+            a_total = 2.0 * area + 2.0 * (w + l) * height
+            df = (
+                self._DF_TRANSMITTANCE * a_glazed * self._DF_SKY_ANGLE
+                / max(1e-9, a_total * (1.0 - self._DF_REFLECTANCE ** 2))
+            )
+
+            # Limiting depth: window on the longer wall → depth is the short side.
+            depth_index = (short_side / max(long_side, 1e-9)
+                           + short_side / self._DF_WINDOW_HEAD)
+            if depth_index > depth_limit:
+                df *= depth_limit / depth_index
+
+            weighted += df * area
+            total_area += area
+
+        if total_area <= 0:
+            return behavior.target_value * 0.60 if behavior.target_value else 0.60
+
+        daylight_factor = weighted / total_area
+        performance_ratio = min(2.0, daylight_factor / self._DF_TARGET)
+        logger.debug(f"    Lighting: DF={daylight_factor:.2f}%, ratio={performance_ratio:.2f}")
+        return behavior.target_value * performance_ratio if behavior.target_value else daylight_factor
     
     def _calculate_spatial_behavior(
         self, 
@@ -487,20 +550,7 @@ class BehaviorCalculator:
             score = 0.75 if has_windows else 0.40
             return behavior.target_value * score if behavior.target_value else score
 
-        # Glazing ratios declared per room type, from "<room_type>_window" structures.
-        ratios_by_type: Dict[str, List[float]] = {}
-        for s in structures.values():
-            name = (s.name or '').lower()
-            if 'window' not in name and 'glazing' not in name:
-                continue
-            dims = s.dimensions or {}
-            if 'window_ratio' not in dims:
-                continue
-            rtype = name.split('_window')[0].split('_glazing')[0].strip()
-            try:
-                ratios_by_type.setdefault(rtype, []).append(float(dims['window_ratio']))
-            except (TypeError, ValueError):
-                continue
+        ratios_by_type = self._glazing_ratios_by_room_type(structures)
 
         has_hvac = any(
             getattr(s.structure_type, 'value', str(s.structure_type)) == 'mep'
