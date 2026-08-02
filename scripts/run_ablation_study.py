@@ -109,7 +109,14 @@ def build_orchestrator(config_name: str) -> PipelineOrchestrator:
     if config_name == "Without RAG (FAISS Retrieval)":
         orch.research.research_node = _empty_research
     elif config_name == "Without Physics-Based Behavior Analysis (S->Bs)":
+        # BOTH calculators must be stubbed. RefinementAgent constructs its own
+        # BehaviorCalculator, and the convergence loop refines every alternative,
+        # so patching only the orchestrator's instance left the refinement path
+        # recomputing real physics — the arm silently failed to ablate anything
+        # and reported a ~0 % drop for designs that had had their behaviors
+        # recomputed from structures after all.
         orch.behavior_calculator.calculate_actual_behaviors = _identity_behaviors
+        orch.refiner.behavior_calculator.calculate_actual_behaviors = _identity_behaviors
     elif config_name == "Equal-Weight Scoring (No Tuned MCDA Weights)":
         orch.scoring = ScoringAgent(
             weights={'functional_adequacy': 0.2, 'behavioral_performance': 0.2,
