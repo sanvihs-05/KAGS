@@ -350,6 +350,12 @@ class PipelineOrchestrator:
                         scores = await self.scoring.score_node(alt)
                         composite = scores['scores']['composite']
 
+                        # Keep the ungated score: if it turns out that NO candidate
+                        # can satisfy the brief, zeroing them all destroys the
+                        # ranking signal entirely, and the fallback below restores
+                        # a meaningful order from these.
+                        alt.metadata['composite_ungated'] = composite
+
                         # ✅ Hard gate: a design that violates the brief may never rank.
                         if self._brief_spec is not None:
                             vres = BriefValidator.validate(alt, self._brief_spec)
@@ -372,6 +378,29 @@ class PipelineOrchestrator:
                         alt.composite_score = 0.0
                         scored_alternatives.append((alt, 0.0))
                 
+                # ✅ Unsatisfiable-brief fallback. When the room program cannot fit
+                # the stated total (e.g. a 20-room brief whose minimum areas already
+                # exceed the band), EVERY candidate fails the gate and is zeroed —
+                # leaving nothing to rank, an arbitrary prune, and an aggregation of
+                # zero-scored designs. The brief is genuinely unsatisfiable there, so
+                # suppressing the ranking helps nobody: rank on the ungated scores
+                # instead and report the violation honestly (gate_fallback + each
+                # candidate's brief_error surface in the result and the UI).
+                gate_fallback = bool(scored_alternatives) and all(
+                    s <= 0.0 for _, s in scored_alternatives
+                )
+                if gate_fallback:
+                    scored_alternatives = [
+                        (alt, float(alt.metadata.get('composite_ungated', 0.0) or 0.0))
+                        for alt, _ in scored_alternatives
+                    ]
+                    for alt, s in scored_alternatives:
+                        alt.composite_score = s
+                    logger.warning(
+                        "   ⚠ No candidate satisfies the brief — ranking on ungated "
+                        "scores; every design still violates it (see brief_validation)."
+                    )
+
                 # Sort by score (highest first)
                 scored_alternatives.sort(key=lambda x: x[1], reverse=True)
                 alternatives = [alt for alt, score in scored_alternatives]
@@ -419,11 +448,10 @@ class PipelineOrchestrator:
                 # ── Capture the real prune trace for the UI ──────────────────
                 if scored_alternatives:
                     kept_ids = {a.node_id for a in alternatives}
-                    # Degenerate case: every candidate violated the brief gate, so
-                    # `valid` was empty and the code above fell back to carrying ALL
-                    # of them forward. They are NOT "kept on merit" — record that so
-                    # the UI never claims a 0.000-scoring design survived a prune.
-                    gate_fallback = not valid
+                    # True when no candidate could satisfy the brief. The ranking
+                    # above then runs on ungated scores, so `kept` is still earned —
+                    # but every design violates the brief and the UI must say so.
+                    gate_fallback = gate_fallback or (not valid)
                     got_trace = {
                         'enabled': True,
                         'candidates': [
@@ -432,7 +460,7 @@ class PipelineOrchestrator:
                                 'variant_type': alt.metadata.get('variant_type', 'N/A'),
                                 'depth': int(getattr(alt, 'generation_level', 0)),
                                 'score': round(score, 4),
-                                'kept': (not gate_fallback) and alt.node_id in kept_ids,
+                                'kept': alt.node_id in kept_ids,
                                 'brief_error': '; '.join(
                                     (alt.metadata.get('brief_validation') or {}).get('errors') or []
                                 ) or None,
@@ -445,7 +473,7 @@ class PipelineOrchestrator:
                             'ratio': 0.70,
                             'n_scored': len(scored_alternatives),
                             'n_pruned': int(n_pruned),
-                            'n_kept': 0 if gate_fallback else len(alternatives),
+                            'n_kept': len(alternatives),
                             'gate_fallback': bool(gate_fallback),
                         },
                         'aggregation': {
@@ -516,7 +544,12 @@ class PipelineOrchestrator:
                             if self._brief_spec is not None:
                                 vres = BriefValidator.validate(aggregated, self._brief_spec)
                                 aggregated.metadata['brief_validation'] = vres.to_dict()
-                                if not vres.passed:
+                                # Under the unsatisfiable-brief fallback every design
+                                # already violates the brief and is ranked on ungated
+                                # scores; zeroing only the hybrid would rank it last
+                                # against its own 0.89-scoring sources for a fault
+                                # they all share.
+                                if not vres.passed and not gate_fallback:
                                     logger.warning(
                                         f"   ✗ Aggregated node violates brief "
                                         f"({'; '.join(vres.errors)}) → score forced to 0.0"

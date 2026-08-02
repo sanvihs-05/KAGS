@@ -202,24 +202,20 @@ function renderPrune(gg) {
     </div>`;
   }).join('');
 
-  // Degenerate run: every candidate failed the brief gate (all 0.000), so the
-  // pipeline carried them all forward rather than pruning on merit.
-  if (p.gate_fallback) {
-    return `<div class="got-panel card">
-      <h3>Prune — ${p.n_scored} candidates scored, none passed the brief gate</h3>
-      <div class="gate-warn">
-        <strong>Every candidate violated the brief</strong>, so each was forced to a
-        composite of 0.000 and no ranking was possible at this stage. With nothing
-        above the threshold, the pipeline carried all ${p.n_scored} forward; the
-        convergence loop then repaired the layouts, which is why the finished
-        designs above still score normally.
-      </div>
-      <div class="prune-rows">${rows}</div>
-    </div>`;
-  }
+  // No candidate could satisfy the brief (typically the room program's minimum
+  // areas exceed the stated total). Ranking falls back to ungated scores, so the
+  // chart below is meaningful — but every design still violates the brief.
+  const warn = p.gate_fallback ? `<div class="gate-warn">
+      <strong>No design satisfies the brief.</strong> Every candidate violated it —
+      most often the requested room program cannot fit the stated total area — so
+      the brief gate could not separate them. Ranking below falls back to the
+      ungated scores; treat these as the best available compromises, not compliant
+      designs. Each row shows its specific violation.
+    </div>` : '';
 
   return `<div class="got-panel card">
     <h3>Prune — ${p.n_scored} candidates scored → ${p.n_kept} kept</h3>
+    ${warn}
     <p class="p-sub">Two cuts. First the <strong>0.70 × best</strong> threshold (${p.top_score.toFixed(3)} → <strong>${p.threshold.toFixed(3)}</strong>, the orange line) drops weak and brief-violating designs — the latter forced to 0.000. Then a diversity cap keeps the top ${p.n_kept} distinct, so some designs right of the line (grey, “cap”) are still cut.</p>
     <div class="prune-legend">
       <span class="lg"><span class="sw kept"></span>kept</span>
