@@ -179,10 +179,18 @@ earns a different score:
 | Strategy | Footprint aspect | Parameter change | Why |
 |---|---|---|---|
 | `functional_priority` | 1.5 | high-priority rooms ×1.08, low ×0.92 | serve the most important functions best |
-| `performance_optimized` | 1.1 | glazing ×0.90, partitions 0.15 m | favour thermal/acoustic performance |
-| `structural_efficiency` | 1.35 | rooms ×0.95, thin 0.08 m partitions, concrete→steel | minimise material |
+| `performance_optimized` | 1.1 | glazing ×0.90, partitions 0.15 m, **envelope → high-performance build-up (U 0.12 wall / 0.10 roof)** | favour thermal/acoustic performance |
+| `structural_efficiency` | 1.35 | rooms ×0.95, thin 0.08 m partitions, concrete→steel, **envelope → lightweight build-up (U 0.30 / 0.22)** | minimise material |
 | `spatial_compactness` | 1.05 | near-square footprint, rooms ×0.97 | maximise compactness |
 | `balanced` | 1.2 | baseline | a neutral all-round design |
+
+**Why the envelope differs between two of them:** the thermal model is an
+area-weighted U→R average dominated by the wall and roof. While every strategy
+shared one envelope, the strategy whose stated purpose is exceeding thermal
+targets returned exactly the same R-value as the one whose purpose is minimising
+material, and thermal contributed nothing to ranking. With the build-ups above
+it spans R 3.9 / 6.0 / 9.0 — and because envelope STC also feeds the acoustic
+model, the trade-off registers on both axes, as it does in practice.
 
 **Why five distinct aspect ratios:** the footprint aspect drives the treemap, so
 giving each strategy its own aspect guarantees five geometrically different

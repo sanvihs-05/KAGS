@@ -310,6 +310,23 @@ class GraphOfThoughtsEngine:
                     dims['thickness'] = thickness
                     s.dimensions = dims
 
+        def _set_envelope(v, wall_material, roof_material):
+            """Swap the opaque envelope build-up.
+
+            The thermal model is an area-weighted U→R average, and the exterior
+            wall and roof dominate that area — so without this a strategy whose
+            whole purpose is thermal performance produced exactly the same
+            R-value as one whose purpose is minimising material, and thermal
+            contributed nothing to ranking. Envelope STC also feeds the acoustic
+            model, so the trade-off shows up on both axes, as it does in reality.
+            """
+            for s in v.structures.values():
+                name = (s.name or '').lower()
+                if name == 'exterior_wall':
+                    s.material_type = wall_material
+                elif name == 'roof':
+                    s.material_type = roof_material
+
         # 1. Functional Priority — enlarge high-priority rooms at the expense
         # of low-priority ones (net ~area-neutral).
         v = self._create_child_node(node, TransformationType.FUNCTIONAL_DECOMPOSITION)
@@ -324,6 +341,7 @@ class GraphOfThoughtsEngine:
         v = self._create_child_node(node, TransformationType.BEHAVIORAL_OPTIMIZATION)
         _scale_windows(v, 0.90)
         _set_partitions(v, 0.15)
+        _set_envelope(v, 'high_performance_envelope', 'high_performance_roof')
         v.metadata['layout_aspect'] = 1.1
         v.metadata['description'] = 'Performance Optimized: exceed thermal/acoustic targets'
         self._tag_variant(v, 'performance_optimized')
@@ -334,6 +352,7 @@ class GraphOfThoughtsEngine:
         v = self._create_child_node(node, TransformationType.STRUCTURAL_VARIATION)
         _scale_rooms(v, lambda p: 0.95)
         _set_partitions(v, 0.08)
+        _set_envelope(v, 'lightweight_frame', 'lightweight_roof')
         for s in v.structures.values():
             if s.material_type == 'concrete' and not s.load_bearing:
                 s.material_type = 'steel'

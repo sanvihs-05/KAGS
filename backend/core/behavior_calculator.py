@@ -615,6 +615,15 @@ class BehaviorCalculator:
             'insulated_timber_frame': {'u_value': 0.18, 'stc': 45.0, 'density': 400.0},
             'insulated_masonry': {'u_value': 0.22, 'stc': 55.0, 'density': 1400.0},
             'insulated_roof': {'u_value': 0.15, 'stc': 40.0, 'density': 300.0},
+            # Higher- and lower-spec build-ups, so a strategy that exists to
+            # "exceed thermal targets" and one that exists to "minimise material"
+            # differ in the envelope rather than only in partitions and glazing.
+            # Upper end is passive-house territory, lower end a thin build-up
+            # around regulatory minimum.
+            'high_performance_envelope': {'u_value': 0.12, 'stc': 50.0, 'density': 450.0},
+            'high_performance_roof': {'u_value': 0.10, 'stc': 45.0, 'density': 350.0},
+            'lightweight_frame': {'u_value': 0.30, 'stc': 38.0, 'density': 250.0},
+            'lightweight_roof': {'u_value': 0.22, 'stc': 34.0, 'density': 200.0},
         }
     
     def _initialize_structural_rules(self) -> Dict[str, Any]:
