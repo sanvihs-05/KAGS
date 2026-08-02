@@ -181,13 +181,19 @@ function renderPrune(gg) {
   // (2) above threshold but dropped by the diversity / top-N cap.
   const rows = gg.candidates.map((c) => {
     const belowThr = c.score < p.threshold;
-    const reason = c.kept ? 'kept' : (belowThr ? 'threshold' : 'cap');
+    const reason = c.brief_error ? 'violation'
+      : (c.kept ? 'kept' : (belowThr ? 'threshold' : 'cap'));
     const cls = [c.kept ? 'kept' : 'pruned'];
     if (c.kept && sourceIds.has(c.id)) cls.push('source');
     const w = Math.max(0, Math.min(100, c.score * 100));
-    const tag = { kept: ['k', 'KEPT'], threshold: ['p', '&lt; thr'], cap: ['c', 'cap'] }[reason];
+    const tag = {
+      kept: ['k', 'KEPT'], threshold: ['p', '&lt; thr'],
+      cap: ['c', 'cap'], violation: ['p', 'brief'],
+    }[reason];
+    const label = prettyVariant(c.variant_type)
+      + (c.brief_error ? ` — ${c.brief_error}` : '');
     return `<div class="prow ${cls.join(' ')} r-${reason}">
-      <span class="pv" title="${esc(prettyVariant(c.variant_type))}">${esc(prettyVariant(c.variant_type))}</span>
+      <span class="pv" title="${esc(label)}">${esc(label)}</span>
       <div class="pbar-wrap">
         <div class="pbar-track"></div>
         <div class="pbar-fill" style="width:${w}%"></div>
@@ -195,6 +201,22 @@ function renderPrune(gg) {
       <span class="ptag"><span class="sc">${c.score.toFixed(3)}</span><span class="st ${tag[0]}">${tag[1]}</span></span>
     </div>`;
   }).join('');
+
+  // Degenerate run: every candidate failed the brief gate (all 0.000), so the
+  // pipeline carried them all forward rather than pruning on merit.
+  if (p.gate_fallback) {
+    return `<div class="got-panel card">
+      <h3>Prune — ${p.n_scored} candidates scored, none passed the brief gate</h3>
+      <div class="gate-warn">
+        <strong>Every candidate violated the brief</strong>, so each was forced to a
+        composite of 0.000 and no ranking was possible at this stage. With nothing
+        above the threshold, the pipeline carried all ${p.n_scored} forward; the
+        convergence loop then repaired the layouts, which is why the finished
+        designs above still score normally.
+      </div>
+      <div class="prune-rows">${rows}</div>
+    </div>`;
+  }
 
   return `<div class="got-panel card">
     <h3>Prune — ${p.n_scored} candidates scored → ${p.n_kept} kept</h3>

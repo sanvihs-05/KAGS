@@ -57,6 +57,31 @@ def design_signature(node) -> Tuple:
     )
 
 
+def layout_footprint(node) -> Tuple:
+    """Fingerprint of the RENDERED geometry — what the floor plan actually looks
+    like (room types and their placed rectangles).
+
+    `design_signature` also folds in materials, ventilation and structure kinds,
+    so two designs that differ only in, say, wall material count as distinct
+    there while drawing an identical picture. Ranking by that alone can fill the
+    top-k with plans the viewer cannot tell apart, which is exactly what the
+    diversity ordering is supposed to prevent — so novelty considers this too.
+    """
+    layout = getattr(node, 'layout', None)
+    rooms = (getattr(layout, 'rooms', None) or {}) if layout is not None else {}
+    out = []
+    for r in rooms.values():
+        pos = getattr(r, 'position_vector', None) or {}
+        out.append((
+            str(getattr(r, 'room_type', 'space') or 'space'),
+            round(float(pos.get('x', 0) or 0), 1),
+            round(float(pos.get('y', 0) or 0), 1),
+            round(float(getattr(r, 'width', 0) or 0), 1),
+            round(float(getattr(r, 'length', 0) or 0), 1),
+        ))
+    return tuple(sorted(out))
+
+
 def variant_family(node) -> str:
     """Level-1 strategy family: first tag of the variant lineage."""
     md = getattr(node, 'metadata', None) or {}
@@ -83,7 +108,7 @@ def diversity_greedy_order(items, key=None):
     """
     remaining = list(items)
     ordered = []
-    seen_fam, seen_shape, seen_sigs = set(), set(), set()
+    seen_fam, seen_shape, seen_sigs, seen_fp = set(), set(), set(), set()
 
     def _node(item):
         return key(item) if key else item
@@ -91,9 +116,13 @@ def diversity_greedy_order(items, key=None):
     while remaining:
         def _novelty(item):
             n = _node(item)
+            fp = layout_footprint(n)
+            # An unplaced design (no rooms yet) has an empty footprint; don't let
+            # that empty tuple count as a repeat and penalise it.
             return ((variant_family(n) not in seen_fam)
                     + (footprint_class(n) not in seen_shape)
-                    + (design_signature(n) not in seen_sigs))
+                    + (design_signature(n) not in seen_sigs)
+                    + (bool(fp) and fp not in seen_fp))
         best = max(_novelty(i) for i in remaining)
         pick = next(i for i in remaining if _novelty(i) == best)
         remaining.remove(pick)
@@ -101,6 +130,9 @@ def diversity_greedy_order(items, key=None):
         seen_fam.add(variant_family(n))
         seen_shape.add(footprint_class(n))
         seen_sigs.add(design_signature(n))
+        fp = layout_footprint(n)
+        if fp:
+            seen_fp.add(fp)
         ordered.append(pick)
     return ordered
 

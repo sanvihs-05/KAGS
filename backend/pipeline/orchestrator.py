@@ -419,6 +419,11 @@ class PipelineOrchestrator:
                 # ── Capture the real prune trace for the UI ──────────────────
                 if scored_alternatives:
                     kept_ids = {a.node_id for a in alternatives}
+                    # Degenerate case: every candidate violated the brief gate, so
+                    # `valid` was empty and the code above fell back to carrying ALL
+                    # of them forward. They are NOT "kept on merit" — record that so
+                    # the UI never claims a 0.000-scoring design survived a prune.
+                    gate_fallback = not valid
                     got_trace = {
                         'enabled': True,
                         'candidates': [
@@ -427,7 +432,10 @@ class PipelineOrchestrator:
                                 'variant_type': alt.metadata.get('variant_type', 'N/A'),
                                 'depth': int(getattr(alt, 'generation_level', 0)),
                                 'score': round(score, 4),
-                                'kept': alt.node_id in kept_ids,
+                                'kept': (not gate_fallback) and alt.node_id in kept_ids,
+                                'brief_error': '; '.join(
+                                    (alt.metadata.get('brief_validation') or {}).get('errors') or []
+                                ) or None,
                             }
                             for alt, score in scored_alternatives
                         ],
@@ -437,7 +445,8 @@ class PipelineOrchestrator:
                             'ratio': 0.70,
                             'n_scored': len(scored_alternatives),
                             'n_pruned': int(n_pruned),
-                            'n_kept': len(alternatives),
+                            'n_kept': 0 if gate_fallback else len(alternatives),
+                            'gate_fallback': bool(gate_fallback),
                         },
                         'aggregation': {
                             'performed': False,
