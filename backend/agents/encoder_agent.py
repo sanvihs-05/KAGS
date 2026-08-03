@@ -528,6 +528,7 @@ Extract all spatial information and return as JSON."""
                 program.setdefault('rooms', []).append({
                     'type': rtype, 'name': rtype.replace('_', ' ').title(),
                     'area_min': lo, 'area_max': hi, 'area_preferred': (lo + hi) / 2,
+                    'area_from_default': True,   # inferred room: no stated size
                     'requirements': [], 'orientation': 'any',
                 })
                 added.append(rtype)
@@ -568,7 +569,12 @@ Extract all spatial information and return as JSON."""
                         return None
                 area_min = _safe_float(room.get('area_min'))
                 area_max = _safe_float(room.get('area_max'))
-                if area_min is None or area_max is None:
+                # Whether the BRIEF actually specified this room's size, or we
+                # supplied a default. Precedent retrieval may adjust a defaulted
+                # area (it is genuinely filling a gap) but must not override a
+                # size the client stated — see reconcile_areas_with_precedents.
+                area_from_default = area_min is None or area_max is None
+                if area_from_default:
                     lo, hi = self._DEFAULT_AREA_BAND.get(room_type, self._DEFAULT_AREA_FALLBACK)
                     area_min = area_min if area_min is not None else lo
                     area_max = area_max if area_max is not None else hi
@@ -589,6 +595,7 @@ Extract all spatial information and return as JSON."""
                     'area_min': area_min,
                     'area_max': area_max,
                     'area_preferred': (area_min + area_max) / 2,
+                    'area_from_default': area_from_default,
                     'requirements': room.get('requirements', []),
                     'orientation': room.get('orientation', 'any')
                 })
@@ -698,8 +705,16 @@ Extract all spatial information and return as JSON."""
             # precedent-record style used when the CubiCasa RAG store was
             # built ("<type> of <area> square metres"), so same-type,
             # similar-size real rooms rank highest.
+            # Semantic query only. The area used to be baked into this string
+            # ("bedroom of 16 square metres"), but sentence embeddings do not
+            # order numeric magnitude: measured against that query, "bedroom of
+            # 40 square metres" scores 0.864 while "bedroom of 25 square metres"
+            # scores 0.858 — the larger room is ranked *closer*. The magnitude
+            # term contributed non-monotonic noise on top of a room-type match
+            # that was already doing the work (0.30 type gap vs 0.14 area
+            # spread). Area is a number, so it is compared as one, downstream.
             function.embedding = self._embed_query(
-                f"{room_type.replace('_', ' ')} of {area_preferred:.0f} square metres"
+                f"{room_type.replace('_', ' ')} in a residential floor plan"
             )
             node.add_function(function)
             
@@ -784,8 +799,11 @@ Extract all spatial information and return as JSON."""
                 height=3.0
             )
             room.calculate_volume()
+            # Precedent reconciliation may fill a gap but must not overrule a
+            # size the client stated (see reconcile_areas_with_precedents).
+            room.metadata['area_from_default'] = bool(room_data.get('area_from_default', False))
             layout.rooms[room.room_id] = room
-            
+
             logger.debug(f"  → Created: {room_name} ({area_preferred:.1f} m²)")
         
         # Add node-level structures: HVAC (fixes ventilation S_b) + foundation (fixes S_s load-bearing penalty)
