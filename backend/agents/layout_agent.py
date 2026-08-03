@@ -164,6 +164,9 @@ class LayoutGenerationAgent:
         # `weight > 0.3` gate in circulation never fired, and NO circulation
         # paths were ever attempted — independent of the A* obstacle bug.
         required_pairs = self._brief_required_pairs(node)
+        # Precedent guidance for placement only; never enters required_pairs,
+        # which is what adjacency satisfaction is measured against.
+        preferred_pairs = self._precedent_preferred_pairs(node)
         if required_pairs:
             type_rooms: Dict[str, List[str]] = {}
             for rid, room in node.layout.rooms.items():
@@ -198,7 +201,8 @@ class LayoutGenerationAgent:
 
         optimized_positions = self._squarified_treemap_placement(
             room_specs, node.layout.rooms, aspect=aspect,
-            required_pairs=required_pairs
+            required_pairs=required_pairs,
+            preferred_pairs=preferred_pairs,
         )
         logger.info(f"  → Treemap placement complete (gap-free tiling, aspect={aspect:.2f})")
         
@@ -533,6 +537,26 @@ class LayoutGenerationAgent:
         return 'service'
 
     @staticmethod
+    def _precedent_preferred_pairs(node) -> List[tuple]:
+        """Empirical adjacency pairs retrieved from the CubiCasa corpus,
+        as [(type1, type2, 'preferred'), ...].
+
+        The Research Agent stores these on `node.metadata['precedent_adjacencies']`
+        with the probability P(a-b adjacent | both present) that produced them.
+        They are placement guidance only — see `_pair_aware_order` for why they
+        must not join the brief's requirement set.
+        """
+        out = []
+        for a in ((getattr(node, 'metadata', None) or {}).get('precedent_adjacencies') or []):
+            if not isinstance(a, dict):
+                continue
+            t1 = str(a.get('room1', '')).strip().lower()
+            t2 = str(a.get('room2', '')).strip().lower()
+            if t1 and t2 and t1 != t2:
+                out.append((t1, t2, 'preferred'))
+        return out
+
+    @staticmethod
     def _brief_required_pairs(node) -> List[tuple]:
         """Type-level adjacency requirements from the brief:
         [(type1, type2, 'required'|'avoid'), ...]"""
@@ -596,30 +620,59 @@ class LayoutGenerationAgent:
 
     @staticmethod
     def _pair_aware_order(items: List[tuple], rooms: Dict[str, Room],
-                          pairs: List[tuple]) -> List[tuple]:
-        """Order [(rid, area)] area-desc but pull required partners adjacent,
-        so the squarify shelf tiles them against each other."""
+                          pairs: List[tuple],
+                          preferred_pairs: Optional[List[tuple]] = None) -> List[tuple]:
+        """Order [(rid, area)] area-desc but pull partners adjacent, so the
+        squarify shelf tiles them against each other.
+
+        `pairs` are the brief's requirements and always win. `preferred_pairs`
+        are empirical precedent pairs from the CubiCasa corpus — P(a-b adjacent
+        | both present) above threshold — and are applied only as a tie-break,
+        after every brief partner for a room has been pulled in.
+
+        **Why precedent is strictly secondary, and never scored.** Adjacency
+        satisfaction is measured against the brief (`_adjacency_satisfaction`),
+        so promoting precedent pairs into that requirement set would have the
+        system grading itself against constraints it invented — inflating the
+        denominator with pairs no client asked for. Precedent instead informs
+        *where rooms go* while the brief remains the yardstick: a plan that puts
+        the kitchen beside the dining room because 3,787 real plans do is a
+        better plan, and it costs nothing measured if the brief said nothing
+        about that pair.
+        """
         type_of = {rid: (rooms[rid].room_type.lower() if rid in rooms else '')
                    for rid, _ in items}
-        partners: Dict[str, set] = {}
-        for t1, t2, kind in pairs:
-            if kind == 'required':
-                partners.setdefault(t1, set()).add(t2)
-                partners.setdefault(t2, set()).add(t1)
+
+        def _partner_map(source, kinds=('required',)):
+            out: Dict[str, set] = {}
+            for t1, t2, kind in (source or []):
+                if kind in kinds:
+                    out.setdefault(t1, set()).add(t2)
+                    out.setdefault(t2, set()).add(t1)
+            return out
+
+        partners = _partner_map(pairs)
+        preferred = _partner_map(preferred_pairs, kinds=('preferred',))
 
         area_desc = sorted(items, key=lambda t: -t[1])
         ordered, used = [], set()
-        for rid, a in area_desc:
-            if rid in used:
-                continue
-            ordered.append((rid, a))
-            used.add(rid)
-            for want in partners.get(type_of.get(rid, ''), ()):  # pull partner next
+
+        def _pull(rid_type, table):
+            for want in table.get(rid_type, ()):
                 for rid2, a2 in area_desc:
                     if rid2 not in used and type_of.get(rid2) == want:
                         ordered.append((rid2, a2))
                         used.add(rid2)
                         break
+
+        for rid, a in area_desc:
+            if rid in used:
+                continue
+            ordered.append((rid, a))
+            used.add(rid)
+            rtype = type_of.get(rid, '')
+            _pull(rtype, partners)    # brief requirements first
+            _pull(rtype, preferred)   # then precedent, as a tie-break
         return ordered
 
     def _squarified_treemap_placement(
@@ -629,6 +682,7 @@ class LayoutGenerationAgent:
         aspect: float = 1.2,
         circulation_frac: float = 0.0,
         required_pairs: Optional[List[tuple]] = None,
+        preferred_pairs: Optional[List[tuple]] = None,
     ) -> Dict[str, Dict[str, float]]:
         """
         Gap-free rectangular dissection of the footprint.
@@ -666,8 +720,9 @@ class LayoutGenerationAgent:
                 zone_area = sum(room_specs[r]['area'] for r in zones[z]) / max(1e-9, (1.0 - circulation_frac))
                 zw = W * zone_area / max(footprint, 1e-9)
                 items = [(r, room_specs[r]['area']) for r in zones[z]]
-                if pair_aware and required_pairs:
-                    items = self._pair_aware_order(items, rooms, required_pairs)
+                if pair_aware and (required_pairs or preferred_pairs):
+                    items = self._pair_aware_order(
+                        items, rooms, required_pairs or [], preferred_pairs)
                 placed = self._squarify_rect(items, x_cursor, 0.0, zw, H,
                                              keep_order=pair_aware)
                 for rid, (rx, ry, rw, rh) in placed.items():
