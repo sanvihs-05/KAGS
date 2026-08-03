@@ -5,15 +5,15 @@
     "results": [
       {
         "config": "Full Framework (Baseline)",
-        "composite": 0.8757,
-        "functional": 0.8878,
-        "behavioral": 0.8876,
+        "composite": 0.8748,
+        "functional": 0.8901,
+        "behavioral": 0.8901,
         "structural": 0.9731,
-        "layout": 0.9413,
+        "layout": 0.9335,
         "sustainability": 0.4625,
         "top_variant": "aggregated_hybrid",
         "n_prototypes": 5,
-        "time_s": 21.55,
+        "time_s": 36.57,
         "arm_verified": {
           "ok": true,
           "evidence": "method=Graph of Thought, got_graph=True, real physics calls=36"
@@ -22,20 +22,20 @@
       },
       {
         "config": "Without GoT Exploration",
-        "composite": 0.877,
-        "functional": 0.8455,
-        "behavioral": 0.8453,
+        "composite": 0.879,
+        "functional": 0.85,
+        "behavioral": 0.85,
         "structural": 0.9731,
         "layout": 0.9894,
         "sustainability": 0.5458,
         "top_variant": "central_circulation",
         "n_prototypes": 4,
-        "time_s": 15.9,
+        "time_s": 43.02,
         "arm_verified": {
           "ok": true,
           "evidence": "method=Traditional"
         },
-        "drop_pct": -0.15
+        "drop_pct": -0.48
       },
       {
         "config": "Without RAG (FAISS Retrieval)",
@@ -47,80 +47,80 @@
         "sustainability": 0.4625,
         "top_variant": "aggregated_hybrid",
         "n_prototypes": 5,
-        "time_s": 19.35,
+        "time_s": 45.7,
         "arm_verified": {
           "ok": true,
           "evidence": "precedents_found=0"
         },
-        "drop_pct": -0.11
+        "drop_pct": -0.22
       },
       {
         "config": "Without Refinement Agent",
-        "composite": 0.8802,
-        "functional": 0.8878,
-        "behavioral": 0.8876,
+        "composite": 0.8813,
+        "functional": 0.8901,
+        "behavioral": 0.8901,
         "structural": 0.9731,
-        "layout": 0.943,
+        "layout": 0.9429,
         "sustainability": 0.5042,
         "top_variant": "aggregated_hybrid",
         "n_prototypes": 5,
-        "time_s": 5.58,
+        "time_s": 10.88,
         "arm_verified": {
           "ok": true,
           "evidence": "convergence_iterations=[0]"
         },
-        "drop_pct": -0.51
+        "drop_pct": -0.74
       },
       {
         "config": "Without Physics-Based Behavior Analysis (S->Bs)",
-        "composite": 0.8379,
-        "functional": 0.765,
-        "behavioral": 0.765,
+        "composite": 0.8353,
+        "functional": 0.7612,
+        "behavioral": 0.7572,
         "structural": 0.9731,
-        "layout": 0.9825,
+        "layout": 0.9824,
         "sustainability": 0.5339,
         "top_variant": "aggregated_hybrid",
         "n_prototypes": 5,
-        "time_s": 17.17,
+        "time_s": 42.76,
         "arm_verified": {
           "ok": true,
           "evidence": "stub calls=26, real calls=0 (any real call means a call site was missed)"
         },
-        "drop_pct": 4.32
+        "drop_pct": 4.52
       },
       {
         "config": "Equal-Weight Scoring (No Tuned MCDA Weights)",
-        "composite": 0.8305,
-        "functional": 0.8878,
-        "behavioral": 0.8876,
+        "composite": 0.8299,
+        "functional": 0.8901,
+        "behavioral": 0.8901,
         "structural": 0.9731,
-        "layout": 0.9413,
+        "layout": 0.9335,
         "sustainability": 0.4625,
         "top_variant": "aggregated_hybrid",
         "n_prototypes": 5,
-        "time_s": 15.46,
+        "time_s": 40.88,
         "arm_verified": {
           "ok": true,
-          "evidence": "composite=0.830454 vs equal-weight mean=0.830454"
+          "evidence": "composite=0.829856 vs equal-weight mean=0.829856"
         },
-        "drop_pct": 5.16
+        "drop_pct": 5.13
       },
       {
         "config": "Naive Layout Placement (No Zoning/Treemap)",
-        "composite": 0.8356,
-        "functional": 0.8878,
-        "behavioral": 0.8876,
+        "composite": 0.8387,
+        "functional": 0.8901,
+        "behavioral": 0.8901,
         "structural": 0.9731,
-        "layout": 0.8207,
-        "sustainability": 0.3637,
+        "layout": 0.8302,
+        "sustainability": 0.3605,
         "top_variant": "aggregated_hybrid",
         "n_prototypes": 5,
-        "time_s": 14.29,
+        "time_s": 41.12,
         "arm_verified": {
           "ok": true,
           "evidence": "5 rooms, distinct y=[0.0]"
         },
-        "drop_pct": 4.58
+        "drop_pct": 4.13
       }
     ]
   },
@@ -130,15 +130,15 @@
     "results": [
       {
         "config": "Full Framework (Baseline)",
-        "composite": 0.8789,
-        "functional": 0.8565,
-        "behavioral": 0.8553,
+        "composite": 0.8923,
+        "functional": 0.8861,
+        "behavioral": 0.885,
         "structural": 0.9806,
-        "layout": 0.9784,
+        "layout": 0.9788,
         "sustainability": 0.5296,
         "top_variant": "functional_priority+compact_layout",
         "n_prototypes": 8,
-        "time_s": 26.45,
+        "time_s": 52.76,
         "arm_verified": {
           "ok": true,
           "evidence": "method=Graph of Thought, got_graph=True, real physics calls=63"
@@ -147,20 +147,20 @@
       },
       {
         "config": "Without GoT Exploration",
-        "composite": 0.8596,
-        "functional": 0.8064,
-        "behavioral": 0.8064,
+        "composite": 0.8793,
+        "functional": 0.85,
+        "behavioral": 0.85,
         "structural": 0.9806,
-        "layout": 0.986,
+        "layout": 0.9863,
         "sustainability": 0.5415,
         "top_variant": "central_circulation",
         "n_prototypes": 6,
-        "time_s": 19.9,
+        "time_s": 54.63,
         "arm_verified": {
           "ok": true,
           "evidence": "method=Traditional"
         },
-        "drop_pct": 2.2
+        "drop_pct": 1.46
       },
       {
         "config": "Without RAG (FAISS Retrieval)",
@@ -172,80 +172,80 @@
         "sustainability": 0.5296,
         "top_variant": "functional_priority+compact_layout",
         "n_prototypes": 8,
-        "time_s": 26.21,
+        "time_s": 65.76,
         "arm_verified": {
           "ok": true,
           "evidence": "precedents_found=0"
         },
-        "drop_pct": -1.57
+        "drop_pct": -0.04
       },
       {
         "config": "Without Refinement Agent",
-        "composite": 0.8714,
-        "functional": 0.8565,
-        "behavioral": 0.8553,
+        "composite": 0.8848,
+        "functional": 0.8861,
+        "behavioral": 0.885,
         "structural": 0.9806,
-        "layout": 0.9404,
+        "layout": 0.9408,
         "sustainability": 0.5501,
         "top_variant": "functional_priority+natural_ventilation",
         "n_prototypes": 8,
-        "time_s": 7.07,
+        "time_s": 18.74,
         "arm_verified": {
           "ok": true,
           "evidence": "convergence_iterations=[0]"
         },
-        "drop_pct": 0.85
+        "drop_pct": 0.84
       },
       {
         "config": "Without Physics-Based Behavior Analysis (S->Bs)",
-        "composite": 0.808,
-        "functional": 0.6873,
-        "behavioral": 0.6873,
+        "composite": 0.8294,
+        "functional": 0.748,
+        "behavioral": 0.743,
         "structural": 0.9806,
-        "layout": 0.9787,
-        "sustainability": 0.5798,
-        "top_variant": "spatial_compactness+natural_ventilation",
+        "layout": 0.9788,
+        "sustainability": 0.5296,
+        "top_variant": "functional_priority+compact_layout",
         "n_prototypes": 8,
-        "time_s": 34.74,
+        "time_s": 70.76,
         "arm_verified": {
           "ok": true,
           "evidence": "stub calls=47, real calls=0 (any real call means a call site was missed)"
         },
-        "drop_pct": 8.07
+        "drop_pct": 7.05
       },
       {
         "config": "Equal-Weight Scoring (No Tuned MCDA Weights)",
-        "composite": 0.8401,
-        "functional": 0.8565,
-        "behavioral": 0.8553,
+        "composite": 0.852,
+        "functional": 0.8861,
+        "behavioral": 0.885,
         "structural": 0.9806,
-        "layout": 0.9784,
+        "layout": 0.9788,
         "sustainability": 0.5296,
         "top_variant": "functional_priority+compact_layout",
         "n_prototypes": 8,
-        "time_s": 37.97,
+        "time_s": 67.36,
         "arm_verified": {
           "ok": true,
-          "evidence": "composite=0.840074 vs equal-weight mean=0.840074"
+          "evidence": "composite=0.851992 vs equal-weight mean=0.851992"
         },
-        "drop_pct": 4.41
+        "drop_pct": 4.52
       },
       {
         "config": "Naive Layout Placement (No Zoning/Treemap)",
-        "composite": 0.81,
-        "functional": 0.8565,
-        "behavioral": 0.8553,
+        "composite": 0.8251,
+        "functional": 0.8861,
+        "behavioral": 0.885,
         "structural": 0.9556,
-        "layout": 0.778,
-        "sustainability": 0.3924,
+        "layout": 0.7861,
+        "sustainability": 0.39,
         "top_variant": "functional_priority+natural_ventilation",
         "n_prototypes": 8,
-        "time_s": 29.91,
+        "time_s": 62.96,
         "arm_verified": {
           "ok": true,
           "evidence": "8 rooms, distinct y=[0.0]"
         },
-        "drop_pct": 7.84
+        "drop_pct": 7.53
       }
     ]
   },
@@ -255,37 +255,37 @@
     "results": [
       {
         "config": "Full Framework (Baseline)",
-        "composite": 0.8377,
-        "functional": 0.8008,
-        "behavioral": 0.7931,
+        "composite": 0.8461,
+        "functional": 0.8207,
+        "behavioral": 0.8026,
         "structural": 0.9865,
-        "layout": 0.9249,
+        "layout": 0.9308,
         "sustainability": 0.5036,
         "top_variant": "functional_priority+natural_ventilation",
-        "n_prototypes": 10,
-        "time_s": 56.33,
+        "n_prototypes": 5,
+        "time_s": 70.87,
         "arm_verified": {
           "ok": true,
-          "evidence": "method=Graph of Thought, got_graph=True, real physics calls=86"
+          "evidence": "method=Graph of Thought, got_graph=True, real physics calls=52"
         },
         "drop_pct": 0.0
       },
       {
         "config": "Without GoT Exploration",
-        "composite": 0.8355,
-        "functional": 0.7597,
-        "behavioral": 0.7465,
+        "composite": 0.8457,
+        "functional": 0.7848,
+        "behavioral": 0.7586,
         "structural": 0.9865,
-        "layout": 0.9812,
+        "layout": 0.9873,
         "sustainability": 0.5368,
         "top_variant": "central_circulation",
         "n_prototypes": 6,
-        "time_s": 25.4,
+        "time_s": 65.54,
         "arm_verified": {
           "ok": true,
           "evidence": "method=Traditional"
         },
-        "drop_pct": 0.26
+        "drop_pct": 0.05
       },
       {
         "config": "Without RAG (FAISS Retrieval)",
@@ -297,80 +297,80 @@
         "sustainability": 0.5751,
         "top_variant": "spatial_compactness+natural_ventilation",
         "n_prototypes": 10,
-        "time_s": 63.36,
+        "time_s": 111.14,
         "arm_verified": {
           "ok": true,
           "evidence": "precedents_found=0"
         },
-        "drop_pct": -1.8
+        "drop_pct": -0.79
       },
       {
         "config": "Without Refinement Agent",
-        "composite": 0.8453,
-        "functional": 0.8026,
-        "behavioral": 0.7955,
+        "composite": 0.8551,
+        "functional": 0.8225,
+        "behavioral": 0.8051,
         "structural": 0.9865,
-        "layout": 0.9349,
+        "layout": 0.9465,
         "sustainability": 0.5453,
         "top_variant": "functional_priority+natural_ventilation",
-        "n_prototypes": 10,
-        "time_s": 12.55,
+        "n_prototypes": 5,
+        "time_s": 17.72,
         "arm_verified": {
           "ok": true,
           "evidence": "convergence_iterations=[0]"
         },
-        "drop_pct": -0.91
+        "drop_pct": -1.06
       },
       {
         "config": "Without Physics-Based Behavior Analysis (S->Bs)",
-        "composite": 0.818,
-        "functional": 0.716,
-        "behavioral": 0.7304,
+        "composite": 0.8327,
+        "functional": 0.7577,
+        "behavioral": 0.7539,
         "structural": 0.9865,
-        "layout": 0.9726,
+        "layout": 0.9706,
         "sustainability": 0.5249,
-        "top_variant": "balanced+compact_layout",
-        "n_prototypes": 10,
-        "time_s": 48.16,
+        "top_variant": "functional_priority+compact_layout",
+        "n_prototypes": 5,
+        "time_s": 48.61,
         "arm_verified": {
           "ok": true,
-          "evidence": "stub calls=59, real calls=0 (any real call means a call site was missed)"
+          "evidence": "stub calls=39, real calls=0 (any real call means a call site was missed)"
         },
-        "drop_pct": 2.35
+        "drop_pct": 1.58
       },
       {
         "config": "Equal-Weight Scoring (No Tuned MCDA Weights)",
-        "composite": 0.8018,
-        "functional": 0.8008,
-        "behavioral": 0.7931,
+        "composite": 0.8088,
+        "functional": 0.8207,
+        "behavioral": 0.8026,
         "structural": 0.9865,
-        "layout": 0.9249,
+        "layout": 0.9308,
         "sustainability": 0.5036,
         "top_variant": "functional_priority+natural_ventilation",
-        "n_prototypes": 10,
-        "time_s": 43.03,
+        "n_prototypes": 5,
+        "time_s": 75.99,
         "arm_verified": {
           "ok": true,
-          "evidence": "composite=0.801797 vs equal-weight mean=0.801797"
+          "evidence": "composite=0.808848 vs equal-weight mean=0.808848"
         },
-        "drop_pct": 4.29
+        "drop_pct": 4.41
       },
       {
         "config": "Naive Layout Placement (No Zoning/Treemap)",
-        "composite": 0.7562,
-        "functional": 0.8056,
-        "behavioral": 0.7997,
+        "composite": 0.7653,
+        "functional": 0.8268,
+        "behavioral": 0.8112,
         "structural": 0.9723,
-        "layout": 0.6544,
-        "sustainability": 0.3681,
+        "layout": 0.6609,
+        "sustainability": 0.3667,
         "top_variant": "functional_priority+natural_ventilation",
-        "n_prototypes": 10,
-        "time_s": 52.03,
+        "n_prototypes": 5,
+        "time_s": 73.09,
         "arm_verified": {
           "ok": true,
           "evidence": "14 rooms, distinct y=[0.0]"
         },
-        "drop_pct": 9.73
+        "drop_pct": 9.55
       }
     ]
   }

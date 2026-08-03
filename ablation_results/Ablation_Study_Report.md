@@ -43,7 +43,7 @@ Three scenarios span the adaptive-complexity range:
 
 ## Run history, and a defect this study had to fix in itself
 
-This study has been executed five times. The history matters, because three of those runs reported
+This study has been executed seven times. The history matters, because three of those runs reported
 numbers that were not measuring what their labels claimed — and in each case the giveaway was a
 number that looked *reasonable* rather than one that looked wrong.
 
@@ -85,6 +85,14 @@ Each configuration now carries a marker that must be observable in its own outpu
 | Equal-Weight Scoring | composite equals the unweighted mean of the five sub-scores |
 | Naive Layout Placement | every room sits at `y = 0` (the stub's single row) |
 
+**Runs 6-7** changed how RAG works (finding 6) and re-measured. Run 6 also demonstrated the
+verification catching a regression introduced *while extending the pipeline*: adding a
+`preferred_pairs` argument to the treemap broke the naive-placement stub, which still had the old
+signature, so every call raised TypeError and the layout agent fell back to synthesis. The arm
+stopped ablating placement and reported 5.05 % instead of 9.73 % on the family home — a number
+with nothing obviously wrong about it. Three cells failed the `y = 0` check, the log named the
+TypeError, and the stub now absorbs future signature changes. **Run 7 is the data above.**
+
 **All 21 cells verified.** The physics arm is instrumented rather than inferred:
 `BehaviorCalculator.calculate_actual_behaviors` is wrapped at the *class* level as a tripwire, so
 any instance an arm forgets to stub still routes through it and is counted. The baseline logs
@@ -105,37 +113,37 @@ ratio was a proxy that did not survive contact with the pipeline.)*
 
 | Configuration | Composite | Δ vs baseline | Time (s) |
 |---|---|---|---|
-| **Full Framework (Baseline)** | **0.8757** | — | 21.55 |
-| Without GoT Exploration | 0.877 | −0.15 % (no change) | 15.90 |
-| Without RAG (FAISS Retrieval) | 0.8767 | −0.11 % (no change) | 19.35 |
-| Without Refinement Agent | 0.8802 | −0.51 % (no change) | 5.58 |
-| Without Physics-Based Behavior Analysis | 0.8379 | **+4.32 %** | 17.17 |
-| Equal-Weight Scoring (No Tuned MCDA Weights) | 0.8305 | **+5.16 %** | 15.46 |
-| Naive Layout Placement (No Zoning/Treemap) | 0.8356 | **+4.58 %** | 14.29 |
+| **Full Framework (Baseline)** | **0.8748** | — | 36.57 |
+| Without GoT Exploration | 0.879 | −0.48 % (no change) | 43.02 |
+| Without RAG (FAISS Retrieval) | 0.8767 | −0.22 % (no change) | 45.70 |
+| Without Refinement Agent | 0.8813 | −0.74 % (no change) | 10.88 |
+| Without Physics-Based Behavior Analysis | 0.8353 | **+4.52 %** | 42.76 |
+| Equal-Weight Scoring (No Tuned MCDA Weights) | 0.8299 | **+5.13 %** | 40.88 |
+| Naive Layout Placement (No Zoning/Treemap) | 0.8387 | **+4.13 %** | 41.12 |
 
 ### 3-Bedroom Townhouse (Medium complexity)
 
 | Configuration | Composite | Δ vs baseline | Time (s) |
 |---|---|---|---|
-| **Full Framework (Baseline)** | **0.8789** | — | 26.45 |
-| Without GoT Exploration | 0.8596 | +2.20 % | 19.90 |
-| Without RAG (FAISS Retrieval) | 0.8927 | −1.57 % | 26.21 |
-| Without Refinement Agent | 0.8714 | +0.85 % (no change) | 7.07 |
-| Without Physics-Based Behavior Analysis | 0.808 | **+8.07 %** | 34.74 |
-| Equal-Weight Scoring (No Tuned MCDA Weights) | 0.8401 | **+4.41 %** | 37.97 |
-| Naive Layout Placement (No Zoning/Treemap) | 0.81 | **+7.84 %** | 29.91 |
+| **Full Framework (Baseline)** | **0.8923** | — | 52.76 |
+| Without GoT Exploration | 0.8793 | +1.46 % | 54.63 |
+| Without RAG (FAISS Retrieval) | 0.8927 | −0.04 % (no change) | 65.76 |
+| Without Refinement Agent | 0.8848 | +0.84 % (no change) | 18.74 |
+| Without Physics-Based Behavior Analysis | 0.8294 | **+7.05 %** | 70.76 |
+| Equal-Weight Scoring (No Tuned MCDA Weights) | 0.852 | **+4.52 %** | 67.36 |
+| Naive Layout Placement (No Zoning/Treemap) | 0.8251 | **+7.53 %** | 62.96 |
 
 ### 4-Bedroom Family Home (High complexity)
 
 | Configuration | Composite | Δ vs baseline | Time (s) |
 |---|---|---|---|
-| **Full Framework (Baseline)** | **0.8377** | — | 56.33 |
-| Without GoT Exploration | 0.8355 | +0.26 % (no change) | 25.40 |
-| Without RAG (FAISS Retrieval) | 0.8528 | −1.80 % | 63.36 |
-| Without Refinement Agent | 0.8453 | −0.91 % (no change) | 12.55 |
-| Without Physics-Based Behavior Analysis | 0.818 | +2.35 % | 48.16 |
-| Equal-Weight Scoring (No Tuned MCDA Weights) | 0.8018 | **+4.29 %** | 43.03 |
-| Naive Layout Placement (No Zoning/Treemap) | 0.7562 | **+9.73 %** | 52.03 |
+| **Full Framework (Baseline)** | **0.8461** | — | 70.87 |
+| Without GoT Exploration | 0.8457 | +0.05 % (no change) | 65.54 |
+| Without RAG (FAISS Retrieval) | 0.8528 | −0.79 % (no change) | 111.14 |
+| Without Refinement Agent | 0.8551 | −1.06 % | 17.72 |
+| Without Physics-Based Behavior Analysis | 0.8327 | +1.58 % | 48.61 |
+| Equal-Weight Scoring (No Tuned MCDA Weights) | 0.8088 | **+4.41 %** | 75.99 |
+| Naive Layout Placement (No Zoning/Treemap) | 0.7653 | **+9.55 %** | 73.09 |
 
 *("Δ" is drop in composite when the feature is removed; "no change" marks a difference within
 run-to-run LLM-extraction noise, not a real effect either direction.)*
@@ -145,22 +153,22 @@ run-to-run LLM-extraction noise, not a real effect either direction.)*
 ## Findings
 
 **1. Layout placement quality scales with complexity and is the largest contributor at the high
-end.** Naive placement's drop grows monotonically with complexity: **4.58 % → 7.84 % → 9.73 %**
+end.** Naive placement's drop grows monotonically with complexity: **4.13 % → 7.53 % → 9.55 %**
 (low → medium → high). A simple room count barely notices the difference between zoned treemap
 tiling and a naive grid; a 14-room family home does. This monotonic scaling is the cleanest signal
 in the study. (It is the *largest* single effect only on the high-complexity scenario — on the
 medium one the physics ablation now edges it out; see Finding 4.)
 
 **2. The tuned MCDA weights matter — a flat 0.2/0.2/0.2/0.2/0.2 measurably underperforms.**
-Equal-weight scoring drops composite by a consistent 4.3–5.2 % across all three scenarios,
+Equal-weight scoring drops composite by a consistent 4.4–5.1 % across all three scenarios,
 confirming that weighting functional adequacy and layout efficiency above sustainability (per
 the architecture doc's rationale — these are the two outcomes a client feels most directly) is
 not an arbitrary choice: it produces higher-scoring designs by the framework's own criteria.
 
 **3. The refinement (convergence) loop is nearly free to skip, but expensive to run.**
 Removing it changes composite by well under 1 % in every scenario — but cuts wall-clock time by
-**3.7–4.5×** (26.45 s → 7.07 s; 56.33 s → 12.55 s). *(Successive runs of this same study measured
-10–16×, then 3–5×, then 2.4–4×, now 3.7–4.5×, on identical composites. Wall-clock here is
+**2.8–4.0×** (52.76 s → 18.74 s; 70.87 s → 17.72 s). *(Successive runs of this same study measured
+10–16×, then 3–5×, 2.4–4×, 3.7–4.5×, now 2.8–4.0×. Wall-clock here is
 dominated by network latency to the hosted LLM and by machine load, so treat the ratio as
 indicative and the absolute seconds as not comparable across runs at all.)* This
 corroborates the architecture doc's stated
@@ -171,7 +179,7 @@ designs that already pass.
 
 **4. Physics-based behavior analysis (S→Bs) is one of the largest contributors — three to four
 times larger than this report previously claimed.** Replacing the physics with the encoder's static
-estimates costs **4.32 % / 8.07 % / 2.35 %** (low / medium / high). On the medium scenario that is
+estimates costs **4.52 % / 7.05 % / 1.58 %** (low / medium / high). On the medium scenario that is
 the single biggest effect in the study, ahead of naive layout placement.
 
 The earlier figures (0.5 % / 2.24 % / 1.37 %) were wrong, and the reason is documented above under
@@ -189,26 +197,59 @@ is worth noting as unexplained rather than rationalised: the expected ordering w
 highest.
 
 **5. GoT exploration's value is complexity-dependent and modest at this alternative count.**
-Disabling GoT costs 2.20 % on the medium scenario, and is within noise on the low (−0.15 %) and
-high (0.26 %) ones.
+Disabling GoT costs 1.46 % on the medium scenario, and is within noise on the low (−0.48 %) and
+high (0.05 %) ones.
 Five named strategies give real geometric diversity (documented elsewhere in this codebase), but
 the single best-scoring design among them is not dramatically better than the Generalizer's direct
 decomposition for these particular briefs.
 
-**6. RAG retrieval shows no measurable composite benefit — traced to a verified, specific cause,
-not a defect.** In two of three scenarios, disabling RAG left composite *unchanged or marginally
-higher*. This was not left as a hand-wave: the mechanism is confirmed at the code level.
-`reconcile_areas_with_precedents` blends a room's stated area toward a similarity-weighted
-precedent estimate (`a* = λ·a_stated + (1−λ)·â_precedent`, λ = 0.6) and writes the result to
-`room.area` — but it does **not** update that room's paired area-behavior `target_value`, which was
-fixed once at encoding time. Verified directly: reconciling a 14 m² bedroom toward an 11.5 m²
-precedent moves `room.area` to 13.0 m² exactly as the formula predicts, while `target_value` stays
-at 14.0 — turning a clean actual/target ratio of 1.0 into 0.929, which *lowers* that behavior's
-`perf()` score even though the room is now sized more realistically. RAG's real, intended objective
-is precedent-grounded **realism** (already verified separately: real bedrooms retrieved at
-13.7–14.5 m² for a 14 m² query, and clamped to the brief's own band so it can never push a design
-out of spec) — it was never designed to raise composite, and this data confirms it mechanically
-cannot, because the one value it changes is scored against a target that doesn't move with it.
+**6. RAG's area path was actively harmful; fixing it raised the baselines, and it is now
+honestly neutral.** Earlier runs showed disabling RAG *improving* composite by 1.57 % and 1.80 % —
+and the pattern was the diagnosis: the harm concentrated on the two briefs that state room sizes,
+and was noise (−0.11 %) on the vague one that states none. Retrieval was fighting the brief. Three
+causes, all since fixed:
+
+- **It overrode stated requirements.** λ = 0.6 blending was applied to *every* room, including
+  sizes the client had specified. "The master bedroom should be 18 sqm" is a requirement, not a
+  suggestion. Reconciliation now touches only areas the encoder defaulted — where precedent is
+  genuinely filling a gap. On the family-home brief: 7 defaulted areas grounded, 6 brief-stated
+  areas left alone.
+- **It moved the design without moving the yardstick.** `room.area` changed while the paired
+  area-behaviour `target_value` stayed at its encoding-time value, so a clean actual/target ratio
+  of 1.0 became 0.929 and `perf()` fell — the design was marked down for a change it had just been
+  told to make. The target now follows the room, as `_fit_rooms_to_total` already did.
+- **The retrieval query pretended an embedding could compare sizes.** The query text was
+  `"bedroom of 16 square metres"`, but sentence embeddings do not order magnitude: measured against
+  that query, 40 m² scores 0.864 while 25 m² scores 0.858 — the *larger* room ranks closer. Room
+  type carried the signal (0.30 gap) and the magnitude term added non-monotonic noise (0.14
+  spread). The query is now semantic and area proximity is applied afterwards as a number.
+
+**Result:** −1.57 % → **−0.04 %** and −1.80 % → **−0.79 %**. More importantly the *baselines* rose,
+0.8789 → 0.8923 and 0.8377 → 0.8461, on exactly the two briefs that state areas: the pipeline
+produces better designs now that retrieval has stopped contradicting the brief. The ablation delta
+only measures RAG's marginal contribution; absolute quality is the thing that improved.
+
+**Why it still does not go positive — a structural limit, not a remaining bug.** With the target
+now moving with the room, precedent-grounded sizing is neutral *by construction* on S_f and S_b.
+What is left is geometric perturbation: different areas tile differently, which costs a little
+layout efficiency and form factor. "These sizes match real Finnish homes" is not a quantity this
+scoring function measures, so precedent acting through **area** can never earn anything back.
+Area is the wrong channel.
+
+**Adjacency is the channel the scorer can see**, since `adjacency_satisfaction` is a real term in
+S_l. The corpus carries P(a-b adjacent | both present) over 3,787 plans, and those 92 pairs now
+inform placement — strictly as a tie-break after every brief requirement is honoured, and
+deliberately never added to the scored requirement set (promoting invented constraints into the
+denominator would be the system grading itself against requirements no client asked for).
+
+**That change did not move the ablation either, and the reason is worth recording:** the prior's
+strongest pairs are the ones a brief usually states outright. `kitchen|living_room` carries
+p = 0.764, but the townhouse brief says "open-plan kitchen and living room", so it is already a
+requirement and correctly excluded from suggestions — leaving one marginal pair
+(`bedroom|living_room`, p = 0.629) to break a single tie in room ordering. Precedent has the most
+to add exactly where these three scenarios have the least room for it. It is kept because it is
+principled and verified to cost nothing (brief adjacency satisfaction held at 1.00), not because
+this study can show it helping.
 
 **7. Naive layout placement has a second-order effect: it also dents structural feasibility.**
 The single-row grid gives rooms different width/length pairs than the zoned treemap, and on the
