@@ -72,11 +72,19 @@ SCENARIOS = {
 }
 
 
-def _naive_grid_placement(room_specs, rooms, aspect=1.2, circulation_frac=0.0, required_pairs=None):
+def _naive_grid_placement(room_specs, rooms, aspect=1.2, circulation_frac=0.0,
+                          required_pairs=None, preferred_pairs=None, **_kwargs):
     """Ablation stand-in for the real zoned squarified treemap: places rooms
     left-to-right in a single row, sized only by area, with NO zoning
     (service/social/private) and no aspect-ratio control. This isolates what
-    the layout agent's actual placement logic contributes."""
+    the layout agent's actual placement logic contributes.
+
+    `**_kwargs` absorbs any parameter added to the real signature later. Without
+    it, adding `preferred_pairs` to `_squarified_treemap_placement` made every
+    call raise TypeError, the layout agent fell back to synthesis, and the arm
+    stopped ablating placement at all — silently changing its drop from 9.73 %
+    to 5.05 % on the family home. The arm verification caught it; a stub that
+    tracks a signature by hand will drift again, so it now cannot."""
     positions = {}
     x = 0.0
     for rid, spec in room_specs.items():
