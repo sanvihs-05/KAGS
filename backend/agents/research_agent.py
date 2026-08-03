@@ -148,6 +148,13 @@ class ResearchAgent:
                         top_k=depth
                     )
 
+                # Rank by area proximity, numerically. Retrieval above is now a
+                # pure room-type/semantic match (the magnitude was removed from
+                # the query text because embeddings do not order it), so the
+                # size comparison happens here where it can be done correctly:
+                # prefer precedents close to the programmed area, in metres².
+                similar = self._rank_by_area_proximity(similar, func)
+
                 findings['similar_spaces'].extend(similar)
                 findings['room_precedents'][func.name] = similar
         
@@ -157,6 +164,44 @@ class ResearchAgent:
         logger.info(f"✓ Research complete: {len(findings['similar_spaces'])} precedents found")
         return findings
     
+    @staticmethod
+    def _rank_by_area_proximity(precedents: List[Dict], func) -> List[Dict]:
+        """Re-rank precedents by how close their area is to the programmed one.
+
+        The embedding query is semantic (room type), so every precedent comes
+        back with a similar score and the ordering carries no size information.
+        Comparing areas as numbers is both correct and cheap:
+
+            area_score = 1 / (1 + |a_precedent - a_target| / a_target)
+
+        which is 1.0 at an exact match and decays smoothly with relative error.
+        It is *combined* with the semantic score rather than replacing it, so a
+        precedent still has to be the right kind of room; a `bathroom` that
+        happens to be 16 m² must not outrank an actual bedroom.
+
+        Precedents without an area keep their semantic score unchanged, so a
+        store that exposes none degrades to the previous behaviour.
+        """
+        sr = getattr(func, 'spatial_requirements', None) or {}
+        target = sr.get('preferred_area') or sr.get('min_area')
+        if not target:
+            return precedents
+        target = float(target)
+
+        for p in precedents:
+            area = p.get('area')
+            if area is None:
+                continue
+            try:
+                rel = abs(float(area) - target) / max(target, 1e-6)
+            except (TypeError, ValueError):
+                continue
+            p['area_score'] = 1.0 / (1.0 + rel)
+            p['similarity'] = float(p.get('similarity', 0.0) or 0.0) * p['area_score']
+
+        precedents.sort(key=lambda p: p.get('similarity', 0.0), reverse=True)
+        return precedents
+
     def _generate_recommendations(self, findings: Dict, node: FBSLLayoutNode) -> List[Dict]:
         """Generate recommendations based on findings"""
         recommendations = []
@@ -217,6 +262,7 @@ class ResearchAgent:
         }
 
         adjusted = 0
+        skipped_stated = 0
         for func_id, func in node.functions.items():
             precedents = room_precedents.get(func.name, [])
             # similarity-weighted precedent area over precedents that expose one
@@ -235,6 +281,17 @@ class ResearchAgent:
             if room is None:
                 continue
 
+            # Precedent fills gaps; it does not overrule the client. A size the
+            # brief stated ("the master bedroom should be 24 sqm") is a
+            # requirement, and blending it toward the corpus mean moved the
+            # design away from what was asked for — measurably: the ablation's
+            # "Without RAG" arm came out POSITIVE (removing retrieval improved
+            # composite) precisely on the two briefs that state areas, and was
+            # noise on the vague one that states none.
+            if not (getattr(room, 'metadata', None) or {}).get('area_from_default', False):
+                skipped_stated += 1
+                continue
+
             stated = float(room.area) if room.area else est
             blended = lam * stated + (1.0 - lam) * est
 
@@ -248,10 +305,23 @@ class ResearchAgent:
                 room.area = new_area
                 if isinstance(sr, dict):
                     sr['preferred_area'] = new_area
+                # Keep the yardstick with the design. The area Behavior's target
+                # came from this room's programmed area; moving the room without
+                # moving the target left the design missing its own spec, so
+                # S_f and S_b dropped by construction. `_fit_rooms_to_total`,
+                # the other area-mutating path, already does this.
+                for b in node.behaviors.values():
+                    if (b.derived_from_function == func_id
+                            and 'area' in (b.metric_name or '').lower()):
+                        b.target_value = round(new_area, 2)
                 adjusted += 1
 
-        if adjusted:
-            logger.info(f"✓ RAG reconciliation adjusted {adjusted} room area(s) from precedents")
+        if adjusted or skipped_stated:
+            logger.info(
+                f"✓ RAG reconciliation adjusted {adjusted} room area(s) from precedents"
+                + (f"; left {skipped_stated} brief-stated area(s) untouched"
+                   if skipped_stated else "")
+            )
         return adjusted
 
     def enhance_node_with_research(self, node: FBSLLayoutNode,
