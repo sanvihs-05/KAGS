@@ -234,7 +234,7 @@ class EncoderAgent:
         # silently under-delivers on the user's explicit size. Parse the stated
         # total and scale the room program to fit within the band.
         stated = self._parse_total_area(user_input)
-        if stated:
+        if stated and self._plausible_total(stated, node):
             node.metadata['target_total_area'] = stated
             self._fit_rooms_to_total(node, stated)
 
@@ -1204,7 +1204,17 @@ Extract all spatial information and return as JSON."""
         single-room area."""
         t = text.lower()
         unit = r'(?:sqm|sq\s*m|m2|m²|square\s*met(?:er|re)s?)'
-        cue = r'(?:total|overall|whole|entire|gross|footprint|floor\s*area|house|home|apartment|within|under|up\s*to|around|about|approximately)'
+        # Whole-design cue words. The dwelling-type list matters as much as the
+        # explicit "total": a brief opening "a bungalow of 180-210 sqm" was not
+        # matched at all because `bungalow` was missing, so the parser fell
+        # through to the next cue it *did* know and read "the **home** should
+        # include an **18 sqm** master suite" as the building total — validating
+        # a 200 m² house against a 15-21 m² band, failing every candidate, and
+        # dropping the whole run into the unsatisfiable-brief fallback.
+        cue = (r'(?:total|overall|whole|entire|gross|footprint|floor\s*area|'
+               r'house|home|apartment|flat|bungalow|villa|cottage|duplex|'
+               r'townhouse|penthouse|residence|dwelling|studio|cabin|'
+               r'within|under|up\s*to|around|about|approximately)')
         # range: "... 210-250 sqm"
         m = re.search(cue + r'[^.\d]{0,30}?(\d{2,4}(?:\.\d+)?)\s*(?:-|to|–|and)\s*(\d{2,4}(?:\.\d+)?)\s*' + unit, t)
         if m:
@@ -1216,6 +1226,30 @@ Extract all spatial information and return as JSON."""
             v = float(m.group(1))
             return (v * 0.95, v * 1.05)
         return None
+
+    @staticmethod
+    def _plausible_total(band: tuple, node: FBSLLayoutNode) -> bool:
+        """Reject a parsed 'total' that is smaller than the room programme.
+
+        Cue-word matching is inherently fragile — one unlisted building type
+        ("bungalow") and the parser latches onto a *room* size later in the
+        brief instead. This is the structural check that word lists cannot
+        provide: a figure smaller than the rooms already extracted cannot be the
+        building's total, whatever phrasing produced it. A brief asking for a
+        24 m² master suite can never have a 21 m² total.
+        """
+        rooms = (node.layout.rooms if node.layout and node.layout.rooms else {}) or {}
+        if not rooms:
+            return True
+        largest = max((float(r.area or 0) for r in rooms.values()), default=0.0)
+        hi = float(band[1])
+        if hi < largest:
+            logger.warning(
+                f"  ⚠ Ignoring parsed total area {band} — smaller than the largest "
+                f"room ({largest:.1f} m²); this is a room size, not the total"
+            )
+            return False
+        return True
 
     @classmethod
     def _fit_rooms_to_total(cls, node: FBSLLayoutNode, band: tuple) -> None:
