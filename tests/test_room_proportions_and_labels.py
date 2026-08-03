@@ -111,3 +111,27 @@ def test_label_falls_back_to_the_type_when_unnamed():
     assert room_label({"name": "", "room_type": "living_room"}) == "Living Room"
     assert room_label({"room_type": "kitchen"}) == "Kitchen"
     assert room_label({}) == "Space"
+
+
+# --------------------------------------------------- stated-total parsing
+def test_dwelling_types_beyond_house_and_home_are_recognised():
+    """A brief opening "a bungalow of 180-210 sqm" was not matched at all, so
+    the parser fell through and read a *room* size as the building total."""
+    assert EncoderAgent._parse_total_area("a bungalow of 180-210 sqm") == (180.0, 210.0)
+    for phrase, expected in (("a villa of 200 sqm", 200.0),
+                             ("a cottage of 150 sqm", 150.0),
+                             ("a duplex of 240 sqm", 240.0)):
+        band = EncoderAgent._parse_total_area(phrase)
+        assert band and abs(sum(band) / 2 - expected) < 1e-6, (phrase, band)
+
+
+def test_a_room_size_is_never_taken_as_the_building_total():
+    """The structural guard word lists cannot provide: a figure smaller than a
+    room already extracted cannot be the total, whatever phrasing produced it."""
+    node = _node([("Master Bedroom", "bedroom", 24.0, 20.0, 26.0)])
+    assert EncoderAgent._plausible_total((15.0, 21.0), node) is False
+    assert EncoderAgent._plausible_total((180.0, 210.0), node) is True
+
+
+def test_briefs_stating_no_total_are_unaffected():
+    assert EncoderAgent._parse_total_area("A small 2-bedroom apartment.") is None
