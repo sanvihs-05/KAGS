@@ -108,11 +108,18 @@ much: RAG area reconciliation blends in precedent areas and can push the program
 that happens to every candidate, all of them score 0.0 and the ranking collapses
 entirely.
 
-**Output.** An FBSL problem node: one Function + area Behavior + partition and
-glazing Structures per room, node-level HVAC and foundation, an initial room
-list, and `required_adjacencies` (resolved to canonical types). Each Function
-also receives a 384-dim query embedding (see §2.2) so precedent retrieval can
-fire.
+**Output.** An FBSL problem node:
+
+- per room — one Function, an area Behavior, and partition + glazing Structures;
+- per room, *when the brief asks for it* — daylight / ventilation / thermal /
+  acoustic Behaviors (§1), for room types where each is meaningful;
+- node-level — HVAC, foundation, and the **opaque envelope** (`exterior_wall`,
+  `roof`), whose areas are estimated from the floor plate so the thermal model's
+  area-weighted average weights them correctly against the openings;
+- an initial room list and `required_adjacencies` (resolved to canonical types).
+
+Each Function also receives a 384-dim query embedding (see §2.2) so precedent
+retrieval can fire.
 
 ---
 
@@ -625,7 +632,9 @@ a wall.
   top-k, and package each prototype (complete FBSL, all five scores, a
   matplotlib-rendered **PNG** floor plan and adjacency graph — embedded in the
   API result as `data:` URIs, with the SVG layout retained as a fallback —
-  and an MD/HTML report).
+  and an MD/HTML report). The run is then persisted to the result store (§5),
+  so it can be listed, reopened and deleted afterwards; a storage failure is
+  logged and never loses the result the caller is waiting on.
 
 ---
 
@@ -636,21 +645,55 @@ a wall.
 - **LLM services** — cloud (Groq / any OpenAI-compatible) primary, local Ollama
   (`llama3.2`) fallback, rule-based parser as the deterministic floor. Encoding
   temperature 0.1 for consistent structured extraction.
-- **PostgreSQL (optional)** — `projects`, `fbsl_nodes`
+- **Result store (SQLite, `results/kags_results.db`)** — the primary record of
+  what the system has produced. A `runs` row per pipeline execution (brief,
+  method, complexity, timing, the GoT trace) and a `prototypes` row per design,
+  each carrying the *complete* design: full FBSL, the layout geometry, the
+  connectivity graph as explicit nodes/edges preserving the required-vs-achieved
+  distinction, all five sub-scores, and both rendered images as `data:` URIs.
+  `ON DELETE CASCADE` (with `PRAGMA foreign_keys = ON`, which SQLite leaves off
+  by default) removes a run's prototypes with it. **Why a database rather than
+  the filesystem bundle it replaced:** runs used to land as loose files under
+  `outputs/<project>/prototypes/…` with throwaway renders accumulating in
+  `visual_outputs/` — 2,716 files and 431 MB of them at one point — with no way
+  to list what a run contained or delete one. Holding the images beside the
+  design also means deleting a run cannot orphan files.
+- **HTTP API + UI (FastAPI)** — `POST /pipeline/run` executes the pipeline and
+  persists the result; `GET /results`, `GET /results/{id}`,
+  `DELETE /results/{id}` and `DELETE /results/{id}/prototypes/{pid}` manage the
+  store. The single-page frontend under `frontend/` (served at `/frontend/`)
+  submits briefs, renders the ranked prototypes with their floor plan and
+  connectivity graph, visualises the GoT prune/aggregate trace, and lists saved
+  runs with per-run and per-prototype deletion.
+- **PostgreSQL (optional, not required)** — `projects`, `fbsl_nodes`
   (F/B/S/L as JSONB, all six scores, generation level), `evaluations`
-  (per-behavior breakdown, strengths/weaknesses). The filesystem bundle under
-  `outputs/<project>/prototypes/<rank>_<id>/` (`fbsl_data.json`, `metadata.json`,
-  `layout.svg`, `adjacency.png`, reports) is independent of the database.
+  (per-behavior breakdown, strengths/weaknesses). Used only when configured; the
+  SQLite result store above is independent of it.
 
 ---
 
 ## 6. Regression protection
 
-`tests/` holds a pytest suite (26 tests) covering: the five scoring dimensions
-are real and discriminating; the encoder's parsing, lexicon, area/adjacency
-guards, and stated-total fitting; treemap tiling, measured adjacency, and
-room-graph circulation; design-signature dedup and the five strategies; and the
-LLM provider fallback chain. `pytest tests/` runs green.
+`tests/` holds a pytest suite (**66 tests**) covering: the five scoring
+dimensions are real and discriminating; the encoder's parsing, lexicon,
+area/adjacency guards, and stated-total fitting; treemap tiling, measured
+adjacency, and room-graph circulation; design-signature dedup and the five
+strategies; the LLM provider fallback chain; the four physics models
+(ventilation airflow, BRE daylight, the envelope's effect on thermal, and that
+refinement materially improves it); comfort-behaviour instantiation and
+room-type applicability; and the result store's round-trip completeness and
+cascade deletion.
+
+A bare `pytest` at the repo root runs green. `pytest.ini` scopes collection to
+`tests/`, because the seven `scripts/test_*.py` are manual demo scripts that
+rewire `sys.path` to import `backend` as a top-level package — pytest collected
+them on the filename alone and died, so the root invocation used to fail even
+when every real test passed.
+
+Several of these tests exist because the thing they check was silently broken
+once: a lookup that did no physics, a daylight formula wrong by ~5×, an
+insulation upgrade the calculator could not see, and comfort targets that were
+never instantiated at all.
 
 ---
 
@@ -668,6 +711,27 @@ LLM provider fallback chain. `pytest tests/` runs green.
    placement (zoning already captures most of it).
 4. **Local Ollama** on a 4 GB GPU times out at 60 s; the cloud-first chain is
    what makes the LLM path reliable.
+5. **The physics is concept-stage, and unvalidated.** All four models are
+   closed-form engineering correlations, not simulation: there is no weather
+   file, orientation, sun path, thermal mass, or wind-pressure-coefficient set.
+   They are monotone in the variables the variants change, which is what a
+   comparative ranking needs — but a composite of 0.89 means "scores well under
+   *this system's own* criteria", not that the building performs. Nothing here
+   is checked against EnergyPlus/Radiance or an architect's judgement, so no
+   number in this system should be read as a compliance or performance figure.
+   The cheapest way to earn a stronger claim would be to simulate a handful of
+   generated designs and show the *rank correlation* holds.
+6. **Thermal discriminates only where a strategy takes an envelope position.**
+   `performance_optimized` and `structural_efficiency` change the build-up; the
+   other three share the default, so they return the same R. Giving the rest
+   arbitrary envelopes would manufacture differentiation rather than measure it,
+   so they are deliberately left alone — the per-design path is refinement,
+   which upgrades the build-up when a thermal target is genuinely missed.
+7. **Bare-material U-values describe uninsulated elements.** The table's
+   concrete 2.0 / brick 1.7 W/m²K are materials, not build-ups; only the
+   `insulated_*` / `high_performance_*` / `lightweight_*` entries are
+   whole-assembly figures. Reading a bare material as a wall specification
+   understates the envelope by roughly an order of magnitude.
 
 ---
 
@@ -709,9 +773,10 @@ LLM provider fallback chain. `pytest tests/` runs green.
 | Circulation | mean(direct / graph-path) | doorway-graph walking efficiency |
 | Similarity | cos(E(q),E(pᵢ)) | magnitude-independent semantic closeness |
 | Area reconcile | λ·a_stated + (1−λ)·â_precedent | user-led, precedent-nudged |
-| Thermal | ratio = R / target_R | resistance governs heat retention |
-| Acoustic | ratio = STC / 45 | STC is the transmission-loss standard |
-| Lighting | ratio = DF / 3 | daylight factor threshold for habitable rooms |
+| Thermal | area-weighted `R = 1/U` over the envelope; ratio = R / 5.0 | resistance governs heat retention; the wall and roof carry the area |
+| Acoustic | material STC + thickness bonus; ratio = STC / 45 | STC is the transmission-loss standard |
+| Daylight | `DF = (T·A_w·θ) / (A_total·(1−R²))`; ratio = DF / 3 | BRE (Lynes) average DF — dividing by total *interior surface* is what makes room proportion and ceiling height matter |
+| Ventilation | `Q = max(0.025·A_open·v, (C_d/3)·A_open·√(g·H·ΔT/T̄))`; ACH = 3600·Q/V; ratio = ACH / 4 | BS 5925 / CIBSE single-sided flow, greater of wind- and buoyancy-driven (they are not additive); scored against the purge criterion openable area is sized for |
 
 ---
 
