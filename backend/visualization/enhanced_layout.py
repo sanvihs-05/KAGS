@@ -104,6 +104,11 @@ class LayoutRoomAdapter:
             rooms.append({
                 "room_id": room_id,
                 "room_type": room_type,
+                # The brief's own label ("Master Bedroom", "Nursery", "Guest
+                # Bedroom"). Drawings previously showed room_type, so four
+                # distinct rooms the client had named all read "Bedroom" and
+                # the plan lost the program it was built from.
+                "name": (getattr(room, "name", "") or "") if room else "",
                 "area": area,
                 "x": bounds[0],
                 "y": bounds[1],
@@ -113,6 +118,17 @@ class LayoutRoomAdapter:
                 "adjacencies": getattr(room, "required_adjacencies", []) or [],
             })
         return rooms
+
+
+def room_label(room: Dict[str, Any]) -> str:
+    """Label to draw for a room: its brief-given name when there is one,
+    otherwise the room type. Four rooms all typed `bedroom` are the master
+    suite, the nursery, the children's room and the guest room — showing the
+    type erases exactly the distinction the brief asked for."""
+    name = (room.get("name") or "").strip()
+    if name:
+        return name
+    return (room.get("room_type") or "space").replace("_", " ").title()
 
 
 class CompactRoomPlacer:
@@ -342,7 +358,7 @@ class EnhancedLayoutVisualizer:
             ))
             cx = data["x"] + data["width"] / 2
             cy = data["y"] + data["height"] / 2
-            ax.text(cx, cy - 0.18, data["room_type"].replace("_", " ").title(),
+            ax.text(cx, cy - 0.18, room_label(data),
                     ha="center", va="center", fontsize=8, fontweight="bold", color="white")
             ax.text(cx, cy + 0.42, f"{data['area']:.1f} m²",
                     ha="center", va="center", fontsize=6.5, color="#f4f4f4")
@@ -465,7 +481,7 @@ class EnhancedLayoutVisualizer:
             "y": f"{y + height / 2}",
             "class": "room-label",
         })
-        label.text = room["room_type"].replace("_", " ").title()
+        label.text = room_label(room)
 
     # ----------------------------------------------------------- Adjacency Graph
     def _generate_adjacency_graph(self, layout_data: Dict[str, Any],
@@ -577,7 +593,7 @@ class EnhancedLayoutVisualizer:
             ax.text(
                 data["x"] + data["width"] / 2,
                 data["y"] + data["height"] / 2,
-                data["room_type"].replace("_", " ").title(),
+                room_label(data),
                 ha="center",
                 va="center",
                 fontsize=8,
@@ -614,7 +630,7 @@ class EnhancedLayoutVisualizer:
                 nx.draw_networkx_edges(graph, pos, edgelist=edges, ax=ax,
                                        edge_color=color, width=width, style=style, alpha=0.8,
                                        label=f"{edge_type.title()} ({len(edges)})")
-        labels = {node: data["room_type"].replace("_", " ").title() for node, data in graph.nodes(data=True)}
+        labels = {node: room_label(data) for node, data in graph.nodes(data=True)}
         nx.draw_networkx_labels(graph, pos, labels, ax=ax, font_size=9, font_weight="bold")
         ax.axis("off")
         ax.legend(loc="lower left")

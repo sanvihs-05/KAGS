@@ -494,6 +494,14 @@ Extract all spatial information and return as JSON."""
     }
     _DEFAULT_AREA_FALLBACK = (10.0, 15.0)
 
+    # Rooms whose size is set by what happens in them, not by how big the house
+    # is. Scaling a design up to meet a stated total must not inflate these —
+    # see _fit_rooms_to_total.
+    _SERVICE_TYPES = {
+        'bathroom', 'toilet', 'wc', 'ensuite', 'laundry', 'utility', 'mudroom',
+        'storage', 'closet', 'pantry', 'entry', 'hallway', 'corridor', 'sauna',
+    }
+
     # A brief naming any of these clearly describes a DWELLING, so an implied
     # kitchen/bathroom/living room can safely be inferred if missing.
     _DWELLING_CUES = re.compile(
@@ -1209,8 +1217,8 @@ Extract all spatial information and return as JSON."""
             return (v * 0.95, v * 1.05)
         return None
 
-    @staticmethod
-    def _fit_rooms_to_total(node: FBSLLayoutNode, band: tuple) -> None:
+    @classmethod
+    def _fit_rooms_to_total(cls, node: FBSLLayoutNode, band: tuple) -> None:
         """Scale the room program so its total lands inside the stated band.
 
         Under-shoot targets the band MINIMUM (least inflation that satisfies the
@@ -1244,11 +1252,50 @@ Extract all spatial information and return as JSON."""
             return (lo_a if lo_a is not None else r.area * 0.6,
                     hi_a if hi_a is not None else r.area * 1.4)
 
-        target = lo if net < lo else hi
-        scale = target / max(net, 1e-9)
+        # Service and wet rooms are sized by FUNCTION, not by house size: a
+        # bathroom does not become a bedroom because the total has to reach a
+        # stated figure. Uniform proportional scaling ignored that — filling a
+        # 180-210 m² brief pushed bathrooms to ~10-12 m², level with the
+        # bedrooms, which is what a reader immediately sees as wrong. These
+        # rooms are therefore capped at their typology band regardless of the
+        # (often generous) max_area an LLM proposes, and the surplus is
+        # redistributed to the rooms that can genuinely use it.
+        bounds = {}
         for r in rooms:
             min_a, max_a = _bounds_for(r)
-            r.area = round(min(max(r.area * scale, min_a), max_a), 2)
+            rtype = (getattr(r, 'room_type', '') or '').lower()
+            if rtype in cls._SERVICE_TYPES:
+                band = cls._DEFAULT_AREA_BAND.get(rtype)
+                if band:
+                    max_a = min(max_a, band[1])
+                    min_a = min(min_a, max_a)
+            bounds[id(r)] = (min_a, max_a)
+
+        # Iterate: scale the rooms that can still move, hold the capped ones
+        # fixed, and re-distribute what is left until the total lands in band.
+        for _ in range(8):
+            net = sum(r.area for r in rooms)
+            if lo <= net <= hi:
+                break
+            growing = net < lo
+            target = lo if growing else hi
+            movable = [
+                r for r in rooms
+                if ((r.area < bounds[id(r)][1] - 1e-9) if growing
+                    else (r.area > bounds[id(r)][0] + 1e-9))
+            ]
+            if not movable:
+                break   # honest shortfall: nothing can move any further
+            fixed = sum(r.area for r in rooms if r not in movable)
+            movable_now = sum(r.area for r in movable)
+            scale = (target - fixed) / max(movable_now, 1e-9)
+            if scale <= 0:
+                break
+            for r in movable:
+                min_a, max_a = bounds[id(r)]
+                r.area = round(min(max(r.area * scale, min_a), max_a), 2)
+
+        for r in rooms:
             if hasattr(r, 'calculate_volume'):
                 r.calculate_volume()
         node.layout.total_area = sum(r.area for r in rooms)
