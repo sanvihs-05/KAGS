@@ -61,6 +61,27 @@ if config is None:
         'vector_store': {},
     }
 
+def _build_id() -> str:
+    """Short git revision of the code this process actually loaded.
+
+    A running uvicorn holds whatever Python it imported at startup, so pulling
+    changes does nothing until it is restarted — while the frontend, served from
+    disk, updates immediately. That combination shows a *new* UI driving an
+    *old* backend, which looks exactly like a bug in the new code. Reporting the
+    build lets that be checked in one glance instead of inferred from output.
+    """
+    try:
+        import subprocess
+        return subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=BASE_DIR, capture_output=True, text=True, timeout=5
+        ).stdout.strip() or "unknown"
+    except Exception:
+        return "unknown"
+
+
+BUILD_ID = _build_id()
+
 app = FastAPI(title="FBSL-KAGS API with Finnish Floor Plans", version="1.0.0")
 
 # Initialize services
@@ -195,7 +216,9 @@ async def health():
     return {
         "status": "healthy",
         "database": "connected",
-        "finnish_embeddings": "loaded" if vector_store.finnish_embeddings else "not loaded"
+        "finnish_embeddings": "loaded" if vector_store.finnish_embeddings else "not loaded",
+        # The revision this process is actually running — see _build_id().
+        "build": BUILD_ID,
     }
 
 

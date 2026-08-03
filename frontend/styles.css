@@ -373,3 +373,8 @@ section[hidden] { display: none; }
   .prow { grid-template-columns: 130px 1fr 78px; }
   .meter { grid-template-columns: 80px 1fr 38px; }
 }
+
+/* backend build + saved-run brief snippet */
+.build-id { font-variant-numeric: tabular-nums; opacity: .85; }
+.sr-brief { font-size: 11.5px; color: var(--ink-2); margin-top: 2px;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
