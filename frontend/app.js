@@ -324,6 +324,7 @@ async function refreshSaved() {
       <div class="saved-row${r.run_id === CURRENT_RUN_ID ? ' active' : ''}" data-run="${esc(r.run_id)}">
         <div class="sr-main">
           <div class="sr-name">${esc(r.project_name || 'Untitled project')}</div>
+          <div class="sr-brief" title="${esc(r.brief || '')}">${esc((r.brief || '(no brief recorded)').slice(0, 110))}${(r.brief || '').length > 110 ? '…' : ''}</div>
           <div class="sr-meta">${fmtDate(r.created_at)} · ${r.stored_prototypes} prototypes${
             r.top_score != null ? ` · top ${Number(r.top_score).toFixed(3)}` : ''}${
             r.complexity_level ? ` · ${esc(r.complexity_level)}` : ''}</div>
@@ -481,6 +482,21 @@ $('sample-btn').addEventListener('click', loadSample);
     loadSample();
   }
 }
+
+/* ── backend build ───────────────────────────────────────── */
+async function showBuild() {
+  // A running uvicorn holds the Python it imported at startup, while the
+  // frontend is served from disk and updates on refresh. A new UI driving an
+  // old backend looks exactly like a bug in the new code, so show the build.
+  try {
+    const r = await fetch('/health', { cache: 'no-store' });
+    if (!r.ok) return;
+    const h = await r.json();
+    const el = document.getElementById('build-id');
+    if (el && h.build) { el.textContent = `backend build ${h.build}`; el.hidden = false; }
+  } catch (_) { /* static mode: no backend to report */ }
+}
+showBuild();
 
 /* ── saved-runs panel: populate on load ──────────────────── */
 $('refresh-saved').addEventListener('click', refreshSaved);
