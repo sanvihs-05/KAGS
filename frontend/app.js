@@ -400,6 +400,16 @@ async function deletePrototype(prototypeId, card) {
 /* ── main render ─────────────────────────────────────────── */
 function render(data) {
   window.__lastGoT = data.got_graph;
+  // A rule-based extraction means no LLM was reachable: the room programme is
+  // generic and the brief's specifics (nursery, carport, named rooms) were
+  // never read. Without saying so, that looks like the system ignoring the
+  // brief rather than a missing credential.
+  if (data.extraction_method === 'rule-based') {
+    setStatus('No LLM was reachable, so the brief was parsed by the rule-based '
+      + 'fallback: room names and programme are GENERIC. Set GROQ_API_KEY (or '
+      + 'KAGS_LLM_API_KEY) and restart the server to extract the brief properly.',
+      'error');
+  }
   const topK = Number($('top_k').value) || 3;
   renderSummary(data);
   renderDesigns(data, topK);

@@ -227,6 +227,9 @@ class EncoderAgent:
         # Step 2: Create base FBSL node from extracted program
         logger.info("🗂️ Step 2: Creating FBSL node from spatial program...")
         node = self._create_node_from_spatial_program(spatial_program, user_input)
+        # Which extractor produced this programme, so the caller (and the UI)
+        # can tell a brief-driven design from a generic fallback one.
+        node.metadata['extraction_method'] = spatial_program.get('extraction_method', 'unknown')
 
         # ✅ Honor the brief's STATED total floor area. The room program is
         # extracted per-room and often sums below the stated total (e.g. rooms
@@ -386,6 +389,7 @@ Extract all spatial information and return as JSON."""
                     )
 
                 spatial_program = self._validate_spatial_program(spatial_program)
+                spatial_program['extraction_method'] = kind
                 logger.info(f"  ✓ {kind} LLM extracted {len(spatial_program['rooms'])} rooms")
                 logger.debug(f"     Rooms: {[r['name'] for r in spatial_program['rooms']]}")
                 return spatial_program
@@ -398,8 +402,20 @@ Extract all spatial information and return as JSON."""
                 )
                 continue
 
-        logger.warning("  → All LLM providers failed - using rule-based fallback parser")
-        return self._fallback_parse(user_input)
+        # A silent degradation here is worse than a failure: the rule-based
+        # parser always succeeds, so the pipeline produces a plausible-looking
+        # design with GENERIC room names ("Bedroom", "Bathroom") and a generic
+        # dwelling programme — no nursery, carport or guest suite, whatever the
+        # brief asked for. Without the key set, every run looks like the system
+        # ignoring the brief rather than like a missing credential.
+        logger.warning(
+            "  → All LLM providers failed - using rule-based fallback parser. "
+            "Room names and programme will be GENERIC; set GROQ_API_KEY (or "
+            "KAGS_LLM_API_KEY) and restart to extract the brief properly."
+        )
+        program = self._fallback_parse(user_input)
+        program['extraction_method'] = 'rule-based'
+        return program
 
     def _call_cloud_llm(self, system_prompt: str, user_prompt: str) -> str:
         """Call any OpenAI-compatible chat-completions endpoint. Raises on
