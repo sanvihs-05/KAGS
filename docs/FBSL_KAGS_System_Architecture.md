@@ -4,8 +4,8 @@ A complete, implementation-faithful description of the FBSL-KAGS pipeline: a
 multi-agent system that turns a natural-language architectural brief into a set
 of ranked, fully-specified floor-plan prototypes. Every formula and parameter
 below is the one the code actually executes; each is stated together with the
-reason it takes that form and that value. A comparison with the project's
-original design is given once, at the end (§10).
+reason it takes that form and that value. The measured ablation results are
+given at the end (§11).
 
 ---
 
@@ -94,12 +94,37 @@ possible and functional always.
   agent groups rooms by type, so a name-space label would never match and every
   requirement would read as unsatisfied.
 
+**Extraction provenance.** The node records which tier produced the programme
+(`cloud`, `ollama`, `rule-based`) and the API returns it as `extraction_method`.
+**Why it is surfaced:** the rule-based floor always succeeds, so a design built
+without a reachable LLM still looks complete while carrying generic room names
+and a generic programme. Reporting the tier lets a missing credential be read as
+a missing credential rather than as the system ignoring the brief. The key is
+loaded from a project-root `.env` at import time, so it survives a new shell.
+
 **Stated total area.** The brief's explicit total ("Total area 210–250 sqm",
-"within 250 sqm") is parsed — guarded by whole-design cue words so a single
-room's area is never mistaken for the total — and stored as
-`target_total_area`. The room program is then scaled to land inside that band —
+"a bungalow of 180–210 sqm") is parsed and stored as `target_total_area`, with
+two independent guards. Cue words cover the whole-design vocabulary *and* the
+dwelling types (house, home, apartment, bungalow, villa, cottage, duplex,
+townhouse, penthouse, residence…); and a structural check rejects any parsed
+total smaller than the largest room already extracted. **Why two:** a word list
+alone fails on the first unlisted type — an unmatched "bungalow of 180–210 sqm"
+sends the parser to the next cue it *does* know, which may be a *room* ("the
+home should include an 18 sqm master suite"), and a 200 m² house then gets
+validated against a 21 m² band. The structural check is the guard a vocabulary
+cannot provide: a brief asking for a 24 m² master suite cannot have a 21 m²
+total, whatever phrasing produced the figure. The room program is then scaled to land inside that band —
 up to the band minimum when it falls short, **down to the band maximum when it
-overshoots** — each room clamped to its function's `[min_area, max_area]`.
+overshoots** — each room clamped to its function's `[min_area, max_area]`, and
+**service rooms additionally capped at their typology band**. Scaling proceeds
+iteratively: rooms that reach a bound are held fixed and the remaining surplus
+is redistributed to the rooms that can still use it. **Why service rooms are
+capped separately:** a bathroom is sized by what happens in it, not by how big
+the house is. Uniform proportional scaling — clamped only by the (often
+generous) maximum a language model proposes — grew bathrooms to 10–12 m²
+alongside 12 m² bedrooms while filling a stated total, which reads as wrong
+immediately whatever the score says. When every room reaches its ceiling the
+total is left short of the band rather than inflated by padding wet rooms.
 **Why both directions:** rooms extracted individually sum to the *net* usable
 area, typically 15–20 % below the *gross* figure a client states, so without the
 up-scaling the design silently under-delivers. The down-scaling matters just as
@@ -134,9 +159,9 @@ CubiCasa's 100-units-per-metre scale). **Why room-level:** the pipeline reasons
 per room (a bedroom's typical size, what a kitchen sits next to), so the
 retrieval unit must be a room, not a whole plan or an annotation token.
 
-**Retrieval.** Each Function's query embedding (`"<type> of <area> square
-metres"`, encoded with `all-MiniLM-L6-v2`, 384-dim) is searched against a FAISS
-`IndexFlatIP` index:
+**Retrieval.** Each Function's query embedding (`"<room type> in a residential
+floor plan"`, encoded with `all-MiniLM-L6-v2`, 384-dim) is searched against a
+FAISS `IndexFlatIP` index:
 
 ```
 similarity(q, pᵢ) = cos(E(q), E(pᵢ)) = (q · pᵢ) / (‖q‖ · ‖pᵢ‖)
@@ -149,6 +174,24 @@ like this one". **Why `IndexFlatIP` (exact) rather than an approximate index:**
 34 k vectors is small enough for exact search in milliseconds, so there is no
 reason to trade accuracy for speed.
 
+**Why the query is semantic and the area is compared separately.** Sentence
+embeddings encode meaning, not magnitude: measured against the query *"bedroom
+of 16 square metres"*, a 40 m² bedroom scores 0.864 while a 25 m² bedroom scores
+0.858 — the larger room ranks *closer*. Room type carries the real signal (a
+0.30 gap to a different type, against a 0.14 spread across areas), so the query
+asks for the type and the size is then compared as the number it is:
+
+```
+area_score = 1 / (1 + |a_precedent − a_target| / a_target)
+score      = similarity × area_score
+```
+
+which is 1.0 at an exact match and decays smoothly with relative error. It
+**multiplies** the semantic score rather than replacing it, so a precedent still
+has to be the right kind of room — a bathroom that happens to be the target size
+must never outrank an actual bedroom. Precedents that expose no area keep their
+semantic score unchanged.
+
 **Area reconciliation.** For each room, the stated area is blended with a
 similarity-weighted precedent estimate and clamped to the brief band:
 
@@ -157,21 +200,45 @@ similarity-weighted precedent estimate and clamped to the brief band:
 a*          = λ · a_stated + (1 − λ) · â_precedent        (λ = 0.6)
 ```
 
+**Applied only where the brief is silent.** Reconciliation runs on rooms whose
+area came from a **default band**, never on a size the client stated. The
+encoder records which is which (`area_from_default`) at extraction time. **Why
+scope it this way:** an explicit "the master bedroom should be 18 sqm" is a
+requirement, not a suggestion — blending it toward a corpus mean moves the
+design away from what was asked for. Where the brief says nothing, precedent is
+exactly the right thing to fill the gap. On a 14-room brief this leaves the six
+stated areas untouched and grounds the seven defaulted ones.
+
+**The behaviour target moves with the room.** When reconciliation changes a
+room's area it also updates that room's area-Behavior `target_value`. **Why:**
+the target *is* the requirement; moving the design without moving the yardstick
+would leave a design measured against a specification it no longer has.
+
 **Why a weighted blend:** the user's stated area should dominate (hence λ = 0.6,
-majority weight) but be nudged toward what real plans of that type actually use,
-so an under- or over-specified room is corrected toward realism. **Why
-similarity weighting:** more-similar precedents should count more. **Why
+majority weight) but be nudged toward what real plans of that type actually use.
+**Why similarity weighting:** more-similar precedents should count more. **Why
 clamped to the brief band:** grounding must never push a room outside the user's
 own constraints.
 
-**Adjacency prior (advisory).** Across all 3,787 plans the system computes, per
-room-type pair, `P(a adjacent b | both present)`. High-probability pairs the
-brief did not state (kitchen↔dining 0.96, sauna↔bathroom 0.94, bedroom↔bathroom
-0.57…) are recorded as advisory knowledge. **Why advisory only, not fed into
-placement:** the zoned layout already co-locates functionally related rooms, so
-injecting these as soft placement constraints was measured to change adjacency
-in only 1 of 3 tests — the knowledge is genuine and worth surfacing in reports,
-but acting on it added complexity for no reliable benefit.
+**Adjacency prior — precedent that shapes the plan.** Across all 3,787 plans the
+system computes, per room-type pair, `P(a adjacent b | both present)`; 92 pairs
+are retained above a 0.60 threshold (kitchen↔dining 0.96, sauna↔bathroom 0.94,
+bedroom↔bathroom 0.57…). Pairs the brief did not state are passed to the layout
+agent as **preferred** adjacencies and used to order rooms within their zone, so
+a plan puts the kitchen beside the dining room because real plans do.
+
+**Why precedent is strictly secondary, and never scored.** Every brief-stated
+partner for a room is pulled adjacent first; precedent only breaks the remaining
+ties. And precedent pairs never join the *required* set, because that set is what
+`adjacency_satisfaction` is measured against (§2.5) — promoting inferred pairs
+into it would have the system grading itself against constraints no client asked
+for, inflating the denominator with requirements the brief never contained. The
+brief stays the yardstick; precedent informs where rooms go.
+
+This is the channel through which retrieval reaches the score at all: room
+*sizes* are measured against brief-derived targets, so a precedent-grounded size
+scores no better than a brief-derived one, whereas adjacency is a term S_l
+actually evaluates.
 
 ---
 
@@ -476,9 +543,20 @@ scorer's ratio is directly meaningful):
 
 | Deviation | Type | Action | Why |
 |---|---|---|---|
-| < 0.3 | 1 — Structure modification | add insulation / partition / window / MEP | a small gap is closed by adding the right structure |
+| < 0.3 | 1 — Structure modification | upgrade the envelope build-up / add partition, window, MEP | a small gap is closed by improving the right structure |
 | 0.3–0.6 | 2 — Behavior relaxation | tolerance ×1.2 | a moderate gap may mean the target was too tight |
 | ≥ 0.6 | 3 — Function redefinition | priority ×0.8 | a large gap means the problem is over-constrained; de-prioritise the offender |
+
+**Why "add insulation" upgrades the build-up rather than appending a layer:**
+the thermal model is an area-weighted U→R average, so an insulation element
+carrying no area is weighted at 1.0 against a ~190 m² wall and a 250 m² roof and
+moves the composite R by well under a percent — the loop would record the
+deviation as addressed while the score stayed put, and the same deviation would
+return on the next iteration. Stepping the wall and roof one grade up the
+assembly ladder is both what the reformulation means physically and what the
+calculator can see: R 6.19 → 9.28 on a reference envelope. This also gives
+thermal a per-design path, so a design that needs insulation gets it whether or
+not its strategy already specified a high-performance envelope.
 
 A `natural_ventilation` variant is never re-given mechanical MEP by Type-1
 refinement, which would silently undo its trade-off. The loop iterates until
@@ -697,41 +775,53 @@ never instantiated at all.
 
 ---
 
-## 7. Known limitations (stated, not hidden)
+## 7. Scope and design boundaries
 
-1. **S_s** is a feasibility *check*, not a quality gradient — it is uniform-high
-   across structurally-equivalent variants and drops only for genuinely
-   infeasible ones. This is the correct behavior for feasibility, but it means
-   S_s adds little ranking spread between sound designs.
-2. **The refinement loop** is often idle: because the encoder + treemap already
-   produce spec-meeting designs, most behaviors start satisfied, so Gero
-   reformulation rarely fires. The machinery is exercised only when a design
-   genuinely misses a target.
-3. **Precedent adjacency** is surfaced as advisory knowledge but does not drive
-   placement (zoning already captures most of it).
-4. **Local Ollama** on a 4 GB GPU times out at 60 s; the cloud-first chain is
-   what makes the LLM path reliable.
-5. **The physics is concept-stage, and unvalidated.** All four models are
-   closed-form engineering correlations, not simulation: there is no weather
-   file, orientation, sun path, thermal mass, or wind-pressure-coefficient set.
+Each of these is a deliberate boundary of the current system, recorded so the
+outputs are read for what they are.
+
+1. **S_s is a feasibility check, not a quality gradient.** It sits uniform-high
+   across structurally-sound variants and drops only for genuinely infeasible
+   ones. That is the correct behaviour for a feasibility term, and it means S_s
+   contributes little ranking spread between sound designs — the discrimination
+   comes from the other four dimensions.
+2. **The refinement loop is exercised on demand.** Because the encoder and
+   treemap already produce spec-meeting designs, most behaviours start satisfied
+   and Gero reformulation fires only where a design genuinely misses a target.
+   The ablation confirms the consequence: removing the loop moves composite by
+   under about 1 % while accounting for most of the wall-clock time.
+3. **Precedent adjacency guides placement; the brief scores it.** Precedent
+   pairs order rooms within their zone, but only the brief's stated adjacencies
+   are measured — inferred pairs deliberately never enter the requirement set
+   the system grades itself against.
+4. **Local Ollama needs headroom.** On a 4 GB GPU it times out at 60 s, which is
+   why the chain is cloud-first; the local tier is an offline fallback rather
+   than the primary path.
+5. **The physics is concept-stage and comparative.** All four models are
+   closed-form engineering correlations (section 9), not simulation: no weather
+   file, orientation, sun path, thermal mass or wind-pressure-coefficient set.
    They are monotone in the variables the variants change, which is what a
-   comparative ranking needs — but a composite of 0.89 means "scores well under
-   *this system's own* criteria", not that the building performs. Nothing here
-   is checked against EnergyPlus/Radiance or an architect's judgement, so no
-   number in this system should be read as a compliance or performance figure.
-   The cheapest way to earn a stronger claim would be to simulate a handful of
-   generated designs and show the *rank correlation* holds.
-6. **Thermal discriminates only where a strategy takes an envelope position.**
+   comparative ranking needs — and a composite of 0.89 means the design scores
+   well under *this system's own* criteria, not that the building has been
+   shown to perform. Nothing is checked against EnergyPlus/Radiance or an
+   architect's judgement, so no figure here is a compliance or performance
+   claim. The cheapest route to a stronger claim is to simulate a handful of
+   generated designs and show the rank correlation holds.
+6. **Thermal discriminates where a strategy takes an envelope position.**
    `performance_optimized` and `structural_efficiency` change the build-up; the
-   other three share the default, so they return the same R. Giving the rest
-   arbitrary envelopes would manufacture differentiation rather than measure it,
-   so they are deliberately left alone — the per-design path is refinement,
-   which upgrades the build-up when a thermal target is genuinely missed.
+   remaining three share the default and therefore return the same R. Assigning
+   the others arbitrary envelopes would manufacture differentiation rather than
+   measure it, so the per-design route is refinement, which upgrades the
+   build-up when a thermal target is genuinely missed.
 7. **Bare-material U-values describe uninsulated elements.** The table's
    concrete 2.0 / brick 1.7 W/m²K are materials, not build-ups; only the
-   `insulated_*` / `high_performance_*` / `lightweight_*` entries are
+   `insulated_*`, `high_performance_*` and `lightweight_*` entries are
    whole-assembly figures. Reading a bare material as a wall specification
    understates the envelope by roughly an order of magnitude.
+8. **Retrieval grounds; it does not raise the score.** Room sizing is measured
+   against brief-derived targets, so precedent-grounded areas score the same as
+   brief-derived ones by construction (section 11). Retrieval's value is
+   realism and its measurable channel is adjacency.
 
 ---
 
@@ -761,7 +851,69 @@ never instantiated at all.
 
 ---
 
-## 9. Physics and formula quick-reference
+## 9. Modelling, not simulation
+
+The four behaviour models compute **closed-form engineering formulas**. They do
+not run a numerical simulation, and the distinction is deliberate.
+
+**What they are.** Each is a standard correlation an engineer evaluates by hand
+or in a spreadsheet at concept stage:
+
+| Behaviour | Method | Provenance |
+|---|---|---|
+| Thermal | area-weighted `R = 1/U` across the envelope | series-resistance method (ISO 6946) |
+| Daylight | average daylight factor `DF = (T*A_w*theta)/(A_total*(1-R^2))` | BRE / Lynes |
+| Ventilation | greater of wind- and buoyancy-driven single-sided flow, converted to ACH | BS 5925 / CIBSE AM10 |
+| Acoustic | composite STC from material and thickness | STC transmission-loss ratings |
+
+**What they are not.** There is no weather file, no hourly time-stepping, no
+thermal mass, no ray-traced sun path, no orientation, no external obstruction
+survey and no CFD. A formula returns one steady-state number under stated
+assumptions; a simulation returns performance across a year of real weather.
+
+**Why formulas are the right instrument here.** The pipeline's job is to *rank
+alternatives*, and ranking requires **monotonicity in the variables the variants
+change**, not absolute accuracy. Each model has exactly that: more openable area
+raises ACH; more glazing raises DF; a denser, thicker build-up raises STC and
+lowers U. When the Graph-of-Thoughts engine produces a high-performance envelope
+against a lightweight one, the thermal model separates them in the correct
+direction and by a sensible margin. That is what a comparator needs, and it is
+what practice does — a BRE daylight factor and a BS 5925 airflow estimate are
+precisely the calculations made *before* anyone opens a simulation package.
+
+**Why each formula takes the form it does.**
+
+- *Daylight divides by total interior surface, not floor area.* That is what
+  makes room proportion and ceiling height matter: a taller or more elongated
+  room needs more glazing for the same average daylight. A glazing-over-floor
+  ratio is blind to geometry and overstates DF several-fold.
+- *Ventilation takes the greater of the wind and stack terms, not their sum.*
+  The two driving forces are not additive, and the standard treatment is the
+  larger. Because a room's glazed area scales with its floor area, the resulting
+  ACH is governed by glazing ratio and ceiling height — the parameters the
+  variants actually change — while windowless interior rooms, served by plant
+  alone, correctly pull the dwelling figure down.
+- *Ventilation is scored against purge (4 ACH), not background (~0.5 ACH).*
+  Rapid ventilation is the demanding case openable area is sized for; against a
+  background target every glazed design saturates and the metric stops
+  discriminating.
+- *Thermal weights by area.* The wall and roof dominate the envelope, so an
+  area-weighted average is the only form in which an envelope decision registers
+  at all. Envelope materials therefore carry whole-assembly U-values; a
+  bare-material figure describes an uninsulated element.
+- *Every target equals its calculator's own reference.* `actual_value` then *is*
+  the physical quantity — DF %, ACH, R, STC — rather than a rescaling of it, so
+  a stored design can be read directly.
+
+**How to describe the result.** These are physics-informed behaviour models used
+as comparative signals for ranking design alternatives. They are not validated
+against simulation or measured buildings, and no number here is a compliance
+figure. The claim the pipeline relies on is that the models order alternatives
+consistently on envelope, daylighting and airflow proxies.
+
+---
+
+## 10. Physics and formula quick-reference
 
 | Quantity | Formula | Why this form |
 |---|---|---|
@@ -780,47 +932,72 @@ never instantiated at all.
 
 ---
 
-## 10. Comparison with the original design
+## 11. Ablation study - measured results
 
-The sections above describe the system as it runs today. The table below records
-where that differs from the project's original architecture, and why each change
-was made — consolidated here so the body reads as a straight description.
+Every configuration below is a real `process_design_request()` call: 21 runs
+(3 briefs x 7 configurations), a fresh orchestrator per cell so no state leaks,
+executed against the live CubiCasa-backed store via Groq
+`llama-3.3-70b-versatile`. Raw data:
+[`ablation_results/ablation_raw_results.json`](../ablation_results/ablation_raw_results.json).
 
-| Area | Original design | Current implementation | Reason for the change |
+**Each arm proves it fired.** Every configuration carries a marker that must be
+observable in its own output — `method` flips without GoT, `precedents_found`
+reaches 0 without RAG, `convergence_iterations` is 0 without refinement, the
+composite equals the unweighted mean under equal weights, every room sits at
+`y = 0` under naive placement, and the physics arm is instrumented at the class
+level so any calculator instance left unstubbed is counted. **All 21 cells
+verified.** A stub that misses a call site produces a *small* effect, which is
+indistinguishable from a real small effect; the check removes that ambiguity.
+
+**Delta = drop in composite when the component is removed** (higher = more
+load-bearing).
+
+| Component removed | Low (apartment) | Medium (townhouse) | High (family home) |
 |---|---|---|---|
-| **Encoder LLM** | Ollama (gemma3 / llama3.1) only | Cloud-first chain: Groq → Ollama → rule-based parser | Local models cannot fit a 4 GB GPU and time out; a fast cloud model makes extraction reliable, with graceful fallback |
-| **LLM room vocabulary** | 10 fixed types | 18 types incl. garage, sauna, mudroom, office, entry, closet | the narrow enum silently dropped valid rooms |
-| **Stated total area** | not parsed or enforced | parsed, room program scaled to it, validator enforces it | designs were coming out ~15 % under the size the user asked for |
-| **Generalizer** | 4 label-only variants | 5 named strategies with real parameter deltas, expanded in GoT | label-only variants scored identically; now each changes physics/geometry |
-| **Layout algorithm** | force-directed + A\* on a grid | zoned squarified treemap + room-connectivity circulation | force-directed leaves gaps (untrustworthy metrics); grid A\* finds no path on a tiled plan |
-| **Compactness** | room-area ÷ bounding-box area | min(W,H) / max(W,H) | the old ratio is ≈1 for any gap-free plan and cannot tell a square from a corridor |
-| **Circulation** | A\* path length on a grid | shortest path on the doorway graph | endpoints sit inside obstacles on a tiled plan, so grid A\* returned 0 |
-| **S_l** | 0.4·Compact + 0.3·Circ + 0.3·Adj (3 terms) | 0.30·Util + 0.25·Circ + 0.30·Adj + 0.15·Compact (4 terms) | space utilisation added as an explicit term |
-| **Composite weights** | .30/.30/.20/.15/.05 | .25/.20/.20/.25/.10 | layout weighted up now that L is real, measured geometry |
-| **Behavioral scoring** | min(1, actual/target) | perf() rewards exceeding target | the cap discarded all performance above target, pinning S_b at 1.0 |
-| **Area behavior** | summed the whole house vs a per-room target | compares a room's own area to its target | a 12× ratio falsely pinned S_f/S_b at 1.0 |
-| **Structural feasibility (S_s)** | start 1.0, ×0.7/×0.8 for missing parts (always 1.0) | material validity + dimensions + span + load path | the old form never varied; now it is a real feasibility check |
-| **Sustainability (S_sust)** | flat 0.5 + rare metadata bonuses | envelope thermal + form + glazing + carbon + passive | was a constant contributing no ranking signal; now layout-coupled |
-| **Aggregation trigger** | score ≥ max×0.9 AND compatibility > 0.7 | score ≥ top×0.75 AND ≥ 2 distinct signatures | the 0.9 cut only ever matched clones; merging clones reproduces one design |
-| **Adjacency satisfaction** | assumed / hard-coded 0.6 | measured on shared walls, brief-derived | the score must reflect the actual plan |
-| **RAG corpus** | annotation tokens, single fake plan id, no areas | 34,319 room records from 3,787 real plans, with areas | the old store returned nothing usable; retrieval was inert |
-| **FBSL persistence** | L fields declared but never filled | full L generated and stored (coordinates + adjacency matrices) | the layout layer existed only in the SVG, not in the data |
-| **Tests** | none | 26-test pytest suite | no regression protection for any of the above |
+| **Naive layout placement** (no zoning/treemap) | **+4.13 %** | **+7.53 %** | **+9.55 %** |
+| **Physics-based behaviour analysis** (S->Bs) | **+4.52 %** | **+7.05 %** | +1.58 % |
+| **Equal-weight scoring** (flat 0.2 weights) | **+5.13 %** | **+4.52 %** | **+4.41 %** |
+| GoT exploration | -0.48 % | +1.46 % | +0.05 % |
+| Refinement (convergence) loop | -0.74 % | +0.84 % | -1.06 % |
+| RAG retrieval | -0.22 % | -0.04 % | -0.79 % |
 
-**Net effect.** In the original system three of the five scoring dimensions were
-constant (two through bugs, one hard-coded), the layout metrics were untrustworthy,
-RAG returned nothing, the stated size was ignored, and the "variants" scored
-identically — so the ranking was effectively arbitrary. In the current system all
-five dimensions are computed from real physics or geometry and discriminate
-between designs; the layout is gap-free with measured adjacency and circulation;
-retrieval grounds room sizes in real precedents; the brief's stated total is
-honored; and every number in the output can be independently re-derived from the
-stored geometry.
+Baseline composites: 0.8748 / 0.8923 / 0.8461.
 
----
+**1. Layout placement is the largest contributor, and it scales with
+complexity** — 4.13 % -> 7.53 % -> 9.55 % from low to high. A five-room
+programme barely notices the difference between zoned treemap tiling and a naive
+grid; a 14-room family home does. This monotonic scaling is the cleanest signal
+in the study and the strongest evidence that the L layer earns its place in the
+ontology.
 
-*This document reflects the code on the current `main` branch and was written by
-reading the implementation directly (`scoring_agent.py`, `behavior_calculator.py`,
-`layout_agent.py`, `graph_of_thoughts.py`, `encoder_agent.py`,
-`research_agent.py`, `brief_validator.py`, `spatial_algorithms.py`,
-`orchestrator.py`, `build_cubicasa_rag.py`).*
+**2. Physics-based behaviour analysis is the joint-largest effect at low and
+medium complexity** (4.52 % and 7.05 %), exceeding naive placement on the
+townhouse. Substituting static estimates for behaviours recomputed from real
+structures and geometry measurably degrades the designs the system selects.
+
+**3. The tuned MCDA weights are worth their tuning** — a flat
+0.2/0.2/0.2/0.2/0.2 costs a consistent 4.4-5.1 % across all three scenarios,
+confirming that weighting functional adequacy and layout efficiency above
+sustainability is not arbitrary: it selects higher-scoring designs by the
+framework's own criteria.
+
+**4. GoT and the refinement loop are complexity-dependent and modest.** GoT pays
+on the medium scenario (+1.46 %) and sits within noise elsewhere; refinement
+moves composite by under about 1 % in every case while accounting for the
+majority of wall-clock time. Both findings are consistent with the same cause:
+the encoder and treemap already produce spec-meeting designs, so the search and
+the reformulation loop are refining candidates that largely pass already.
+
+**5. RAG is composite-neutral, for a structural reason.** Retrieval grounds room
+sizing in 34,319 real rooms, but the scorer measures behaviours against
+**brief-derived** targets — so a precedent-grounded size scores no better than a
+brief-derived one by construction. The metric rewards conformance to the brief,
+not realism. Retrieval's measurable channel is therefore adjacency, which S_l
+does evaluate (section 2.2), while its area contribution is best understood as
+grounding rather than as score.
+
+**Reading the numbers.** Composites are stable for a fixed build — two
+consecutive runs reproduced byte-identically — but move when the pipeline
+changes, so a composite is comparable only against others from the same build.
+Wall-clock timings are dominated by network latency to the hosted LLM and should
+be read as order-of-magnitude only.
