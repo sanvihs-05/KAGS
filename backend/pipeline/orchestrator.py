@@ -790,6 +790,10 @@ class PipelineOrchestrator:
                         }
                     for d in scored_designs
                 ],
+                # 'rule-based' means no LLM was reachable and the room programme
+                # is generic — surfaced so a missing API key is not mistaken for
+                # the system ignoring the brief.
+                'extraction_method': (problem_node.metadata or {}).get('extraction_method', 'unknown'),
                 'research_findings': {
                     'precedents_found': len(research_findings['similar_spaces']),
                     'recommendations': len(research_findings['recommendations'])
