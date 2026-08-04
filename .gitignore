@@ -3,6 +3,12 @@ venv/
 .venv/
 env/
 .env/
+# Local secrets. NOTE: the pattern above ends in a slash so it only matches a
+# DIRECTORY named .env — a .env *file* holding an API key would have been
+# committed. Both forms are ignored now.
+.env
+.env.*
+!.env.example
 
 # Python cache
 __pycache__/
