@@ -135,3 +135,47 @@ def test_a_room_size_is_never_taken_as_the_building_total():
 
 def test_briefs_stating_no_total_are_unaffected():
     assert EncoderAgent._parse_total_area("A small 2-bedroom apartment.") is None
+
+
+# ------------------------------------------- what is actually DRAWN on the plan
+def test_the_rendered_floor_plan_draws_room_names_not_types():
+    """Asserting on `room_label` alone was not enough: the raster plan builds a
+    networkx graph and labels from its node attributes, and that builder copied
+    a fixed field list which dropped `name`. The SVG path (which uses the room
+    dict directly) looked correct while the PNG the UI shows still read
+    "Bedroom". This checks the text that ends up on the figure."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    import networkx as nx
+    from backend.visualization.enhanced_layout import EnhancedLayoutVisualizer
+
+    graph = nx.Graph()
+    for i, (name, rtype) in enumerate([("Master Bedroom", "bedroom"),
+                                       ("Nursery", "bedroom"),
+                                       ("Children's Bedroom", "bedroom"),
+                                       ("Guest Bedroom", "bedroom")]):
+        graph.add_node(f"r{i}", room_type=rtype, name=name, area=14.0,
+                       x=i * 4.0, y=0.0, width=3.8, height=3.6)
+
+    fig, ax = plt.subplots()
+    EnhancedLayoutVisualizer()._plot_floor_plan(ax, graph, "Test")
+    drawn = [t.get_text() for t in ax.texts]
+    plt.close(fig)
+
+    labels = [t for t in drawn if "m" not in t or "Bedroom" in t or "Nursery" in t]
+    assert "Master Bedroom" in drawn and "Nursery" in drawn
+    assert "Bedroom" not in drawn, "generic type label leaked onto the drawing"
+
+
+def test_the_adapter_and_graph_both_carry_the_name():
+    """The name has to survive every hop from Room -> dict -> graph node."""
+    from backend.visualization.enhanced_layout import LayoutRoomAdapter
+    from shapely.geometry import box
+
+    layout = Layout()
+    room = Room(name="Master Bedroom", room_type="bedroom", area=17.5)
+    layout.rooms = {room.room_id: room}
+    layout.room_polygons = {room.room_id: box(0, 0, 5, 3.5)}
+    extracted = LayoutRoomAdapter(layout).extract_rooms()
+    assert extracted and extracted[0]["name"] == "Master Bedroom"

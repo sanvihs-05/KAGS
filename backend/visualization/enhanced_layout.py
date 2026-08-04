@@ -312,7 +312,12 @@ class EnhancedLayoutVisualizer:
 
         graph = nx.Graph()
         for room in rooms:
+            # `name` must travel with the node: the raster floor plan and the
+            # adjacency graph label from these attributes, so omitting it sent
+            # room_label() to its room_type fallback and four distinctly named
+            # bedrooms all drew as "Bedroom".
             graph.add_node(room["room_id"], room_type=room["room_type"],
+                           name=room.get("name", ""),
                            area=room["area"], x=room["x"], y=room["y"],
                            width=room["width"], height=room["height"])
         self._add_adjacency_edges(graph, rooms)
@@ -492,6 +497,7 @@ class EnhancedLayoutVisualizer:
         for room in rooms:
             graph.add_node(room["room_id"],
                            room_type=room["room_type"],
+                           name=room.get("name", ""),   # see render_datauris
                            area=room["area"],
                            x=room["x"],
                            y=room["y"],
