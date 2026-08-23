@@ -169,9 +169,19 @@ function renderDesign(d, rank) {
 
 function renderDesigns(data, topK) {
   const wrap = $('designs');
-  const designs = (data.designs || []).slice(0, topK);
+  const all = data.designs || [];
+  const designs = all.slice(0, topK);
   wrap.innerHTML = designs.map((d, i) => renderDesign(d, i + 1)).join('');
   $('designs-section').hidden = designs.length === 0;
+
+  // "Show top" only limits what is DRAWN. Without saying so, rendering 1 of 10
+  // is indistinguishable from the pipeline having produced 1.
+  const cap = document.getElementById('designs-count');
+  if (cap) {
+    cap.textContent = designs.length < all.length
+      ? `showing ${designs.length} of ${all.length} generated`
+      : `${all.length} generated`;
+  }
 
   // Per-prototype delete (only present for prototypes loaded from the store)
   wrap.querySelectorAll('.card-del').forEach((btn) => {
@@ -430,8 +440,11 @@ form.addEventListener('submit', async (ev) => {
     use_got: $('use_got').checked,
   };
   // Only cap the candidate pool if a number is given; blank = complexity-adaptive.
+  // Below 3 the search has nothing to work with: one candidate means no
+  // exploration, no diversity ranking and no aggregated hybrid, so the run
+  // returns a single prototype and looks broken rather than constrained.
   const maxc = $('max_alternatives').value.trim();
-  if (maxc) payload.max_alternatives = Number(maxc);
+  if (maxc) payload.max_alternatives = Math.max(3, Number(maxc) || 3);
 
   const btn = $('run-btn');
   btn.disabled = true;

@@ -41,8 +41,8 @@
             <input id="project_name" type="text" placeholder="Untitled project" />
           </div>
           <div class="field field-narrow">
-            <label for="max_alternatives" title="Upper bound on candidate designs carried into scoring. Leave blank to let brief complexity decide.">Max candidates</label>
-            <input id="max_alternatives" type="number" min="1" max="12" placeholder="auto" />
+            <label for="max_alternatives" title="Upper bound on candidate designs carried into scoring. Leave blank to let brief complexity decide. Below 3 there is nothing to compare, rank or merge.">Max candidates</label>
+            <input id="max_alternatives" type="number" min="3" max="12" placeholder="auto" />
           </div>
           <div class="field field-narrow">
             <label for="top_k">Show top</label>
@@ -85,7 +85,7 @@
     <!-- ─────────── Top outputs ─────────── -->
     <section id="designs-section" hidden>
       <div class="section-head">
-        <h2>Top outputs</h2>
+        <h2>Top outputs <span id="designs-count" class="count-note"></span></h2>
         <p class="section-sub">Ranked prototypes (diversity-greedy ordering). Each is a complete FBSL design with a generated floor plan.</p>
       </div>
       <div id="designs" class="designs"></div>

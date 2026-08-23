@@ -378,3 +378,6 @@ section[hidden] { display: none; }
 .build-id { font-variant-numeric: tabular-nums; opacity: .85; }
 .sr-brief { font-size: 11.5px; color: var(--ink-2); margin-top: 2px;
             overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* "showing N of M generated" beside the Top outputs heading */
+.count-note { font-family: inherit; font-size: 12.5px; font-weight: 500; color: var(--muted); margin-left: 8px; }
