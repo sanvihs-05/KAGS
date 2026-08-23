@@ -219,7 +219,26 @@ async def health():
         "finnish_embeddings": "loaded" if vector_store.finnish_embeddings else "not loaded",
         # The revision this process is actually running — see _build_id().
         "build": BUILD_ID,
+        # Which LLM the encoder will try first. Hosted models get retired, and a
+        # retired default fails as a 404 that falls all the way through to the
+        # rule-based parser — slow, and silently generic. Reporting it makes that
+        # a one-line check instead of a diagnosis.
+        "llm": _llm_status(),
     }
+
+
+def _llm_status() -> dict:
+    """Cheap, non-network view of how the encoder is configured."""
+    try:
+        from .agents.encoder_agent import EncoderAgent
+        enc = EncoderAgent.__new__(EncoderAgent)   # no __init__: no model loading
+        import os
+        return {
+            "cloud_configured": bool(os.getenv("GROQ_API_KEY") or os.getenv("KAGS_LLM_API_KEY")),
+            "model": os.getenv("KAGS_LLM_MODEL") or "openai/gpt-oss-120b",
+        }
+    except Exception as e:
+        return {"error": str(e)}
 
 
 class PipelineRequest(BaseModel):

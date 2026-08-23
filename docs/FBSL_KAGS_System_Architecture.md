@@ -67,10 +67,14 @@ auto (default):  cloud LLM  →  local Ollama  →  rule-based parser
 ```
 
 - *Cloud* is any OpenAI-compatible chat endpoint. `GROQ_API_KEY` alone targets
-  Groq's `llama-3.3-70b-versatile`. **Why Groq/70B:** a 70-billion-parameter
-  model extracts room programs far more reliably than a small local model, and
-  Groq's LPU serving returns in ≈1 s, so the latency cost of a large model
-  disappears.
+  Groq's `openai/gpt-oss-120b` (override with `KAGS_LLM_MODEL`). **Why a large
+  hosted model:** it extracts room programmes far more reliably than a small
+  local one, and Groq's LPU serving returns in well under a second, so the
+  latency cost of a large model disappears. **Why the default is worth
+  checking:** hosted providers retire models — a retired id returns 404 and the
+  chain falls all the way to the rule-based parser, which is slow (a 60 s Ollama
+  timeout on the way) and silently generic. `GET /health` reports the model in
+  use for exactly this reason.
 - *Ollama* runs `llama3.2` locally. **Why the small 3B model as the local
   tier:** on a 4 GB laptop GPU a larger model cannot fit and swapping models
   costs 30–40 s; the small model is the only one that stays responsive offline.
@@ -937,7 +941,7 @@ consistently on envelope, daylighting and airflow proxies.
 Every configuration below is a real `process_design_request()` call: 21 runs
 (3 briefs x 7 configurations), a fresh orchestrator per cell so no state leaks,
 executed against the live CubiCasa-backed store via Groq
-`llama-3.3-70b-versatile`. Raw data:
+`openai/gpt-oss-120b`. Raw data:
 [`ablation_results/ablation_raw_results.json`](../ablation_results/ablation_raw_results.json).
 
 **Each arm proves it fired.** Every configuration carries a marker that must be

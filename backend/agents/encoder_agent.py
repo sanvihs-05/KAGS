@@ -90,7 +90,15 @@ class EncoderAgent:
             self.openai_base_url = (
                 os.getenv('KAGS_LLM_BASE_URL') or 'https://api.groq.com/openai/v1'
             ).rstrip('/')
-            default_cloud_model = 'llama-3.3-70b-versatile'
+            # Groq retires hosted models periodically. `llama-3.3-70b-versatile`
+            # was decommissioned and began returning 404 model_not_found, which
+            # sent every extraction down the chain: ~2 s to fail the cloud call,
+            # then a 60 s Ollama read timeout, then the rule-based parser — so a
+            # run took minutes and came back with generic room names. Override
+            # with KAGS_LLM_MODEL; `GET /health` reports what is in use so a
+            # retired default is visible rather than inferred from slow, generic
+            # output.
+            default_cloud_model = 'openai/gpt-oss-120b'
         else:
             self.openai_api_key = None
             self.openai_base_url = (
